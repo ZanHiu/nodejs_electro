@@ -35,7 +35,7 @@ export const createVNPayPayment = async (req, res) => {
     const tmnCode = process.env.VNPAY_TMN_CODE;
     const secretKey = process.env.VNPAY_HASH_SECRET;
     const vnpUrl = process.env.VNPAY_URL;
-    const returnUrl = `${process.env.LOCAL_URL}/payment/payment-return`;
+    const returnUrl = `${process.env.CLIENT_URL}/payment/payment-return`;
 
     // Generate transaction reference
     const txnRef = moment(date).format('DDHHmmss');
@@ -83,7 +83,7 @@ export const vnpayReturn = async (req, res) => {
 
     if (!secureHash) {
       console.error('No secure hash provided');
-      return res.redirect(`${process.env.LOCAL_URL}/payment/failed?message=Invalid request`);
+      return res.redirect(`${process.env.CLIENT_URL}/payment/failed?message=Invalid request`);
     }
 
     // Remove secure hash fields for signature verification
@@ -97,7 +97,7 @@ export const vnpayReturn = async (req, res) => {
 
     if (secureHash !== signed) {
       console.error('Invalid signature for VNPay callback');
-      return res.redirect(`${process.env.LOCAL_URL}/payment/failed?message=Invalid signature`);
+      return res.redirect(`${process.env.CLIENT_URL}/payment/failed?message=Invalid signature`);
     }
 
     const orderInfo = vnpParams.vnp_OrderInfo;
@@ -107,7 +107,7 @@ export const vnpayReturn = async (req, res) => {
     const order = await Order.findById(orderId);
     if (!order) {
       console.error('Order not found:', orderId);
-      return res.redirect(`${process.env.LOCAL_URL}/payment/failed?message=Order not found`);
+      return res.redirect(`${process.env.CLIENT_URL}/payment/failed?message=Order not found`);
     }
 
     if (vnpParams.vnp_ResponseCode === '00') {
@@ -154,14 +154,14 @@ export const vnpayReturn = async (req, res) => {
         await session.commitTransaction();
 
         return res.redirect(
-          `${process.env.LOCAL_URL}/payment/success?orderId=${orderId}&vnp_ResponseCode=${vnpParams.vnp_ResponseCode}`
+          `${process.env.CLIENT_URL}/payment/success?orderId=${orderId}&vnp_ResponseCode=${vnpParams.vnp_ResponseCode}`
         );
       } catch (error) {
         console.error('Error during payment processing:', error);
         if (session) {
           await session.abortTransaction();
         }
-        return res.redirect(`${process.env.LOCAL_URL}/payment/failed?message=${error.message}`);
+        return res.redirect(`${process.env.CLIENT_URL}/payment/failed?message=${error.message}`);
       } finally {
         if (session) {
           await session.endSession();
@@ -191,14 +191,14 @@ export const vnpayReturn = async (req, res) => {
           orderStatus: failedOrder.status,
         });
 
-        return res.redirect(`${process.env.LOCAL_URL}/payment/failed?message=Payment failed`);
+        return res.redirect(`${process.env.CLIENT_URL}/payment/failed?message=Payment failed`);
       } catch (error) {
         console.error('Error updating failed order:', error);
-        return res.redirect(`${process.env.LOCAL_URL}/payment/failed?message=${error.message}`);
+        return res.redirect(`${process.env.CLIENT_URL}/payment/failed?message=${error.message}`);
       }
     }
   } catch (error) {
     console.error('VNPay return error:', error);
-    return res.redirect(`${process.env.LOCAL_URL}/payment/failed?message=Server error`);
+    return res.redirect(`${process.env.CLIENT_URL}/payment/failed?message=Server error`);
   }
 };
