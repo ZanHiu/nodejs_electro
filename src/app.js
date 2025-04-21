@@ -18,6 +18,14 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+// Cấu hình CORS chi tiết hơn
+app.use(cors({
+  origin: [
+    'https://electro-nextjs.vercel.app',
+    'http://localhost:3000'
+  ],
+  credentials: true
+}));
 
 // Connect to database
 connectDB();
@@ -42,16 +50,6 @@ app.get("/", (req, res) => {
       { method: "POST", path: `${baseUrl}/api/categories` },
       { method: "PUT", path: `${baseUrl}/api/categories/:id` },
       { method: "DELETE", path: `${baseUrl}/api/categories/:id` },
-
-      { method: "GET", path: `${baseUrl}/api/products` },
-      { method: "GET", path: `${baseUrl}/api/products/:id` },
-      { method: "POST", path: `${baseUrl}/api/products` },
-      { method: "PUT", path: `${baseUrl}/api/products/:id` },
-      { method: "DELETE", path: `${baseUrl}/api/products/:id` },
-
-      { method: "GET", path: `${baseUrl}/api/home/top-products` },
-      { method: "GET", path: `${baseUrl}/api/home/hot-products` },
-      { method: "GET", path: `${baseUrl}/api/home/newest-products` },
     ],
   });
 });
