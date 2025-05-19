@@ -12,10 +12,16 @@ export const getHomeProducts = async (req, res) => {
       .sort({ offerPrice: 1 })
       .limit(5);
 
+    // Get hot products
+    const hotProducts = await Product.find({})
+      .sort({ views: -1 })
+      .limit(5);
+
     res.json({ 
       success: true, 
       newProducts, 
-      saleProducts 
+      saleProducts, 
+      hotProducts
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

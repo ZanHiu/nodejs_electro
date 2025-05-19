@@ -102,6 +102,114 @@ export const getOrderDetail = async (req, res) => {
   }
 };
 
+export const updateOrderStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const order = await Order.findById(id);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+    
+    // Đối với COD method
+    // Nếu order status là DELIVERED set payment status là PAID
+    if (status === OrderStatus.DELIVERED && order.paymentMethod === 'COD') {
+      order.paymentStatus = PaymentStatus.PAID;
+    }
+
+    // Nếu order status là CANCELLED set payment status là FAILED
+    if (status === OrderStatus.CANCELLED && order.paymentMethod === 'COD') {
+      order.paymentStatus = PaymentStatus.FAILED;
+    }
+
+    // Đối với VNPAY method
+    // Nếu order status là CANCELLED và payment status là PENDING, set payment status là FAILED
+    if (status === OrderStatus.CANCELLED && order.paymentMethod === 'VNPAY' && order.paymentStatus === PaymentStatus.PENDING) {
+      order.paymentStatus = PaymentStatus.FAILED;
+    }
+
+    // Nếu order status là CANCELLED và payment status là PAID, set payment status là REFUND_PENDING
+    if (status === OrderStatus.CANCELLED && order.paymentMethod === 'VNPAY' && order.paymentStatus === PaymentStatus.PAID) {
+      order.paymentStatus = PaymentStatus.REFUND_PENDING;
+    }
+
+    order.status = status;
+    await order.save();
+
+    res.json({
+      success: true,
+      message: 'Order status updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating order status:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+export const cancelOrder = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const order = await Order.findById(id);
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    // Check if order belongs to the user
+    if (order.userId.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to cancel this order'
+      });
+    }
+
+    // Check if order can be cancelled
+    if (order.status === OrderStatus.DELIVERED || 
+        order.status === OrderStatus.CANCELLED || 
+        order.status === OrderStatus.COMPLETED) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order cannot be cancelled'
+      });
+    }
+
+    // Update order status to cancelled
+    order.status = OrderStatus.CANCELLED;
+    
+    // Update payment status based on payment method
+    if (order.paymentMethod === 'COD') {
+      order.paymentStatus = PaymentStatus.FAILED;
+    } else if (order.paymentMethod === 'VNPAY') {
+      order.paymentStatus = order.paymentStatus === PaymentStatus.PAID 
+        ? PaymentStatus.REFUND_PENDING 
+        : PaymentStatus.FAILED;
+    }
+
+    await order.save();
+
+    res.json({
+      success: true,
+      message: 'Order cancelled successfully'
+    });
+  } catch (error) {
+    console.error('Error cancelling order:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 export const verifyPayment = async (req, res) => {
   try {
     const { 

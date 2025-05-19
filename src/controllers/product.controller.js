@@ -9,7 +9,7 @@ cloudinary.config({
 
 export const addProduct = async (req, res) => {
   try {
-    const { name, description, cateId, brandId, price, offerPrice } = req.body;
+    const { name, description, cateId, brandId, price, offerPrice, views } = req.body;
     const files = req.files;
 
     if (!files || files.length === 0) {
@@ -41,6 +41,7 @@ export const addProduct = async (req, res) => {
       price: Number(price),
       offerPrice: Number(offerPrice),
       image: images,
+      views: Number(views),
       date: Date.now(),
     });
 
@@ -53,7 +54,7 @@ export const addProduct = async (req, res) => {
 export const editProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, cateId, brandId, price, offerPrice, existingImages } = req.body;
+    const { name, description, cateId, brandId, price, offerPrice, existingImages, views } = req.body;
     const files = req.files;
 
     // Find product and check ownership
@@ -99,6 +100,7 @@ export const editProduct = async (req, res) => {
         price: Number(price),
         offerPrice: Number(offerPrice),
         image: finalImages,
+        views: Number(views),
       },
       { new: true }
     );

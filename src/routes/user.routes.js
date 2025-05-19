@@ -5,7 +5,7 @@ import { authMiddleware } from '../middlewares/auth.middleware.js';
 const router = express.Router();
 
 router.get('/data', authMiddleware, getUserData);
-router.get('/get-address', authMiddleware, getAddresses);
+router.get('/get-addresses', authMiddleware, getAddresses);
 router.post('/add-address', authMiddleware, addAddress);
 router.get('/cart', authMiddleware, getCart);
 router.post('/cart/update', authMiddleware, updateCart);
