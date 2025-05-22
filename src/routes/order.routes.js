@@ -13,13 +13,13 @@ import { sellerMiddleware } from '../middlewares/seller.middleware.js';
 
 const router = express.Router();
 
-router.post('/create', createOrder);
-router.get('/list', getOrders);
-router.put('/cancel/:id', cancelOrder);
+router.post('/create', authMiddleware, createOrder);
+router.get('/list', authMiddleware, getOrders);
+router.put('/cancel/:id', authMiddleware, cancelOrder);
 router.get('/detail/:id', getOrderDetail);
 router.post('/verify-payment', verifyPayment);
 
-router.get('/seller-orders', getSellerOrders);
-router.put('/update-status/:id', updateOrderStatus);
+router.get('/seller-orders', authMiddleware, sellerMiddleware, getSellerOrders);
+router.put('/update-status/:id', authMiddleware, sellerMiddleware, updateOrderStatus);
 
 export default router;

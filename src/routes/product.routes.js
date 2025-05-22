@@ -17,11 +17,11 @@ import { sellerMiddleware } from '../middlewares/seller.middleware.js';
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-router.post('/add', upload.array('images'), addProduct);
-router.put('/edit/:id', upload.array('images'), editProduct);
-router.delete('/delete/:id', deleteProduct);
+router.post('/add', authMiddleware, sellerMiddleware, upload.array('images'), addProduct);
+router.put('/edit/:id', authMiddleware, sellerMiddleware, upload.array('images'), editProduct);
+router.delete('/delete/:id', authMiddleware, sellerMiddleware, deleteProduct);
 router.get('/list', getProducts);
-router.get('/seller-list', getSellerProducts);
+router.get('/seller-list', authMiddleware, sellerMiddleware, getSellerProducts);
 router.get('/category/:id', getProductsByCategory);
 router.get('/brand/:id', getProductsByBrand);
 router.get('/filter', getFilteredProducts);
