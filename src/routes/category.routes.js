@@ -7,11 +7,11 @@ import { sellerMiddleware } from '../middlewares/seller.middleware.js';
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-router.post('/add', upload.array('images'), addCategory);
-router.put('/edit/:id', upload.array('images'), editCategory);
-router.delete('/delete/:id', deleteCategory);
+router.post('/add', authMiddleware, sellerMiddleware, upload.array('images'), addCategory);
+router.put('/edit/:id', authMiddleware, sellerMiddleware, upload.array('images'), editCategory);
+router.delete('/delete/:id', authMiddleware, sellerMiddleware, deleteCategory);
 router.get('/list', getCategories);
 router.get('/top', getTopCategories);
-router.get('/seller-list', getSellerCategories);
+router.get('/seller-list', authMiddleware, sellerMiddleware, getSellerCategories);
 
 export default router;
