@@ -171,7 +171,7 @@ export const getProductsByBrand = async (req, res) => {
 
 export const getSellerProducts = async (req, res) => {
   try {
-    const products = await Product.find({ userId: req.user.id });
+    const products = await Product.find();
     res.json({ success: true, products });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

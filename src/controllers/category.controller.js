@@ -157,7 +157,7 @@ export const getTopCategories = async (req, res) => {
 
 export const getSellerCategories = async (req, res) => {
   try {
-    const categories = await Category.find({ userId: req.user.id });
+    const categories = await Category.find();
     res.json({ success: true, categories });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
