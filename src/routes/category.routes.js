@@ -12,6 +12,6 @@ router.put('/edit/:id', authMiddleware, sellerMiddleware, upload.array('images')
 router.delete('/delete/:id', authMiddleware, sellerMiddleware, deleteCategory);
 router.get('/list', getCategories);
 router.get('/top', getTopCategories);
-router.get('/seller-list', authMiddleware, sellerMiddleware, getSellerCategories);
+router.get('/seller-list', authMiddleware, sellerMiddleware, getCategories); // getSellerCategories
 
 export default router;

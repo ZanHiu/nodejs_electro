@@ -21,7 +21,7 @@ router.post('/add', authMiddleware, sellerMiddleware, upload.array('images'), ad
 router.put('/edit/:id', authMiddleware, sellerMiddleware, upload.array('images'), editProduct);
 router.delete('/delete/:id', authMiddleware, sellerMiddleware, deleteProduct);
 router.get('/list', getProducts);
-router.get('/seller-list', authMiddleware, sellerMiddleware, getSellerProducts);
+router.get('/seller-list', authMiddleware, sellerMiddleware, getProducts); // getSellerProducts
 router.get('/category/:id', getProductsByCategory);
 router.get('/brand/:id', getProductsByBrand);
 router.get('/filter', getFilteredProducts);
