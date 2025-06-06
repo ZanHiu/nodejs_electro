@@ -33,7 +33,6 @@ export const addCategory = async (req, res) => {
     const images = results.map(result => result.secure_url);
 
     const newCategory = await Category.create({
-      userId: req.user.id,
       name,
       description,
       image: images,
@@ -59,9 +58,9 @@ export const editCategory = async (req, res) => {
     if (!category) {
       return res.status(404).json({ success: false, message: "Category not found" });
     }
-    if (category.userId !== req.user.id) {
-      return res.status(403).json({ success: false, message: "Not authorized" });
-    }
+    // if (category.userId !== req.user.id) {
+    //   return res.status(403).json({ success: false, message: "Not authorized" });
+    // }
 
     // Handle new image uploads if any
     let newImages = [];
@@ -118,9 +117,9 @@ export const deleteCategory = async (req, res) => {
     if (!category) {
       return res.status(404).json({ success: false, message: "Category not found" });
     }
-    if (category.userId !== req.user.id) {
-      return res.status(403).json({ success: false, message: "Not authorized" });
-    }
+    // if (category.userId !== req.user.id) {
+    //   return res.status(403).json({ success: false, message: "Not authorized" });
+    // }
 
     // Delete category
     await Category.findByIdAndDelete(id);
@@ -157,7 +156,7 @@ export const getTopCategories = async (req, res) => {
 
 export const getSellerCategories = async (req, res) => {
   try {
-    const categories = await Category.find();
+    const categories = await Category.find({});
     res.json({ success: true, categories });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

@@ -1,5 +1,6 @@
 import Address from '../models/Address.js';
 import User from '../models/User.js';
+import { clerkClient } from '@clerk/clerk-sdk-node';
 
 export const getUserData = async (req, res) => {
   try {
@@ -51,6 +52,100 @@ export const updateCart = async (req, res) => {
     user.cartItems = cartData;
     await user.save();
     res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getUsers = async (req, res) => {
+  try {
+    // Lấy danh sách user từ Clerk
+    const clerkUsers = await clerkClient.users.getUserList();
+    
+    // Lấy thông tin chi tiết từ database
+    const dbUsers = await User.find({}).select('-cartItems');
+    
+    // Kết hợp thông tin từ cả hai nguồn và loại bỏ user hiện tại
+    const users = clerkUsers.data
+      .filter(clerkUser => clerkUser.id !== req.user.id) // Loại bỏ user hiện tại
+      .map(clerkUser => {
+        const dbUser = dbUsers.find(u => u._id === clerkUser.id);
+        return {
+          _id: clerkUser.id,
+          name: clerkUser.firstName + ' ' + clerkUser.lastName,
+          email: clerkUser.emailAddresses[0]?.emailAddress,
+          imageUrl: clerkUser.imageUrl,
+          role: clerkUser.publicMetadata.role || 'user',
+          isBlocked: !!clerkUser.locked,
+          createdAt: clerkUser.createdAt,
+          ...dbUser?.toObject()
+        };
+      });
+
+    res.json({ success: true, users });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const updateUserRole = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { role } = req.body;
+
+    if (!['user', 'seller'].includes(role)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid role. Role must be either 'user' or 'seller'" 
+      });
+    }
+
+    // Không cho phép thay đổi role của chính mình
+    if (userId === req.user.id) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "You cannot change your own role" 
+      });
+    }
+
+    // Cập nhật role trong Clerk
+    await clerkClient.users.updateUser(userId, {
+      publicMetadata: { role }
+    });
+
+    res.json({ 
+      success: true, 
+      message: "User role updated successfully"
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const toggleUserBlock = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { isBlocked } = req.body;
+
+    // Không cho phép block chính mình
+    if (userId === req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "You cannot block yourself",
+      });
+    }
+
+    // Cập nhật trạng thái block trong Clerk
+    if (isBlocked) {
+      await clerkClient.users.lockUser(userId);
+    } else {
+      await clerkClient.users.unlockUser(userId);
+    }
+
+    res.json({
+      success: true,
+      message: isBlocked ? "User blocked successfully" : "User unblocked successfully",
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

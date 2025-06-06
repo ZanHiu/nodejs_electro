@@ -33,7 +33,6 @@ export const addBrand = async (req, res) => {
     const images = results.map(result => result.secure_url);
 
     const newBrand = await Brand.create({
-      userId: req.user.id,
       name,
       description,
       image: images,
@@ -59,9 +58,9 @@ export const editBrand = async (req, res) => {
     if (!brand) {
       return res.status(404).json({ success: false, message: "Brand not found" });
     }
-    if (brand.userId !== req.user.id) {
-      return res.status(403).json({ success: false, message: "Not authorized" });
-    }
+    // if (brand.userId !== req.user.id) {
+    //   return res.status(403).json({ success: false, message: "Not authorized" });
+    // }
 
     // Handle new image uploads if any
     let newImages = [];
@@ -118,9 +117,9 @@ export const deleteBrand = async (req, res) => {
     if (!brand) {
       return res.status(404).json({ success: false, message: "Brand not found" });
     }
-    if (brand.userId !== req.user.id) {
-      return res.status(403).json({ success: false, message: "Not authorized" });
-    }
+    // if (brand.userId !== req.user.id) {
+    //   return res.status(403).json({ success: false, message: "Not authorized" });
+    // }
 
     // Delete brand
     await Brand.findByIdAndDelete(id);
@@ -157,7 +156,7 @@ export const getTopBrands = async (req, res) => {
 
 export const getSellerBrands = async (req, res) => {
   try {
-    const brands = await Brand.find();
+    const brands = await Brand.find({});
     res.json({ success: true, brands });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
