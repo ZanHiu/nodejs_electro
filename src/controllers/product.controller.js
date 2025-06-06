@@ -9,7 +9,7 @@ cloudinary.config({
 
 export const addProduct = async (req, res) => {
   try {
-    const { name, description, cateId, brandId, price, offerPrice, views } = req.body;
+    const { name, description, category, brand, price, offerPrice, views } = req.body;
     const files = req.files;
 
     if (!files || files.length === 0) {
@@ -33,11 +33,10 @@ export const addProduct = async (req, res) => {
     const images = results.map(result => result.secure_url);
 
     const newProduct = await Product.create({
-      userId: req.user.id,
       name,
       description,
-      cateId: Number(cateId),
-      brandId: Number(brandId),
+      category,
+      brand,
       price: Number(price),
       offerPrice: Number(offerPrice),
       image: images,
@@ -54,16 +53,13 @@ export const addProduct = async (req, res) => {
 export const editProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, cateId, brandId, price, offerPrice, existingImages, views } = req.body;
+    const { name, description, category, brand, price, offerPrice, existingImages, views } = req.body;
     const files = req.files;
 
-    // Find product and check ownership
+    // Find product
     const product = await Product.findById(id);
     if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
-    }
-    if (product.userId !== req.user.id) {
-      return res.status(403).json({ success: false, message: "Not authorized" });
     }
 
     // Handle new image uploads if any
@@ -95,8 +91,8 @@ export const editProduct = async (req, res) => {
       {
         name,
         description,
-        cateId: Number(cateId),
-        brandId: Number(brandId),
+        category,
+        brand,
         price: Number(price),
         offerPrice: Number(offerPrice),
         image: finalImages,
@@ -119,13 +115,10 @@ export const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Find product and check ownership
+    // Find product
     const product = await Product.findById(id);
     if (!product) {
       return res.status(404).json({ success: false, message: "Product not found" });
-    }
-    if (product.userId !== req.user.id) {
-      return res.status(403).json({ success: false, message: "Not authorized" });
     }
 
     // Delete product
@@ -142,7 +135,9 @@ export const deleteProduct = async (req, res) => {
 
 export const getProducts = async (req, res) => {
   try {
-    const products = await Product.find({});
+    const products = await Product.find({})
+      .populate('category')
+      .populate('brand');
     res.json({ success: true, products });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -152,7 +147,9 @@ export const getProducts = async (req, res) => {
 export const getProductsByCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const products = await Product.find({ cateId: id });
+    const products = await Product.find({ category: id })
+      .populate('category')
+      .populate('brand');
     res.json({ success: true, products });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -162,16 +159,9 @@ export const getProductsByCategory = async (req, res) => {
 export const getProductsByBrand = async (req, res) => {
   try {
     const { id } = req.params;
-    const products = await Product.find({ brandId: id });
-    res.json({ success: true, products });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-export const getSellerProducts = async (req, res) => {
-  try {
-    const products = await Product.find();
+    const products = await Product.find({ brand: id })
+      .populate('category')
+      .populate('brand');
     res.json({ success: true, products });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -184,13 +174,15 @@ export const getFilteredProducts = async (req, res) => {
     let query = {};
 
     if (categoryId !== 'all') {
-      query.cateId = Number(categoryId);
+      query.category = categoryId;
     }
     if (brandId !== 'all') {
-      query.brandId = Number(brandId);
+      query.brand = brandId;
     }
 
-    const products = await Product.find(query);
+    const products = await Product.find(query)
+      .populate('category')
+      .populate('brand');
     res.json({ success: true, products });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -208,9 +200,10 @@ export const searchProducts = async (req, res) => {
     const products = await Product.find({
       $or: [
         { name: { $regex: query, $options: 'i' } },
-        // { description: { $regex: query, $options: 'i' } },
       ]
-    }).populate('brandId cateId');
+    })
+    .populate('category')
+    .populate('brand');
 
     res.json({ success: true, products });
   } catch (error) {

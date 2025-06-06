@@ -7,7 +7,6 @@ import {
   getProducts, 
   getProductsByCategory, 
   getProductsByBrand, 
-  getSellerProducts, 
   getFilteredProducts, 
   searchProducts, 
 } from '../controllers/product.controller.js';
