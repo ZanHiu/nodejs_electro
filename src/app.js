@@ -34,6 +34,7 @@ connectDB();
 app.use('/api/home', homeRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/brands', brandRoutes);
+app.use('/api/categories', categoryRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/cart', cartRoutes);
