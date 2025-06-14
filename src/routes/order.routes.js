@@ -7,6 +7,7 @@ import {
   verifyPayment, 
   getSellerOrders, 
   updateOrderStatus, 
+  checkPurchaseStatus,
 } from '../controllers/order.controller.js';
 import { authMiddleware } from '../middlewares/auth.middleware.js';
 import { sellerMiddleware } from '../middlewares/seller.middleware.js';
@@ -21,5 +22,7 @@ router.post('/verify-payment', verifyPayment);
 
 router.get('/seller-orders', authMiddleware, sellerMiddleware, getSellerOrders);
 router.put('/update-status/:id', authMiddleware, sellerMiddleware, updateOrderStatus);
+
+router.get('/check-purchase/:productId', authMiddleware, checkPurchaseStatus);
 
 export default router;

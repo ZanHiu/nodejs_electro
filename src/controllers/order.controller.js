@@ -41,7 +41,7 @@ export const createOrder = async (req, res) => {
       date: Date.now(),
       paymentMethod,
       status: paymentMethod === 'VNPAY' ? OrderStatus.PENDING : OrderStatus.PROCESSING,
-      paymentStatus: paymentMethod === 'VNPAY' ? PaymentStatus.PENDING : PaymentStatus.PENDING,
+      paymentStatus: paymentMethod === 'VNPAY' ? PaymentStatus.PROCESSING : PaymentStatus.PROCESSING,
       // paymentType: "COD"
     });
 
@@ -175,8 +175,7 @@ export const cancelOrder = async (req, res) => {
 
     // Check if order can be cancelled
     if (order.status === OrderStatus.DELIVERED || 
-        order.status === OrderStatus.CANCELLED || 
-        order.status === OrderStatus.COMPLETED) {
+        order.status === OrderStatus.CANCELLED) {
       return res.status(400).json({
         success: false,
         message: 'Order cannot be cancelled'
@@ -281,5 +280,23 @@ export const verifyPayment = async (req, res) => {
       success: false,
       message: error.message || 'Lỗi xử lý thanh toán'
     });
+  }
+};
+
+export const checkPurchaseStatus = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const userId = req.user.id;
+
+    const hasPurchased = await Order.exists({
+      userId: userId,
+      'items.product': productId,
+      status: OrderStatus.DELIVERED,
+      paymentStatus: PaymentStatus.PAID
+    });
+
+    res.json({ success: true, hasPurchased: !!hasPurchased });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 };
