@@ -15,9 +15,7 @@ const orderSchema = new mongoose.Schema({
     enum: [
       "PENDING", 
       "PROCESSING", 
-      "SHIPPING", 
       "DELIVERED", 
-      "COMPLETED", 
       "CANCELLED"
     ],
     default: "PENDING"
@@ -29,7 +27,6 @@ const orderSchema = new mongoose.Schema({
       "PAID", 
       "FAILED", 
       "REFUND_PENDING", 
-      "REFUNDED"
     ],
     default: 'PENDING'
   },

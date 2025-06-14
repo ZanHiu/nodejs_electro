@@ -12,6 +12,7 @@ import cartRoutes from './routes/cart.routes.js';
 import blogRoutes from './routes/blog.routes.js';
 import paymentRoutes from './routes/payment.routes.js';
 import reviewRoutes from './routes/review.routes.js';
+import commentRoutes from './routes/comment.routes.js';
 
 dotenv.config();
 
@@ -41,6 +42,7 @@ app.use('/api/cart', cartRoutes);
 app.use('/api/blogs', blogRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/comments', commentRoutes);
 
 app.get("/", (req, res) => {
   const baseUrl = `${req.protocol}://${req.get("host")}`;
