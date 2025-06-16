@@ -13,12 +13,12 @@ import blogRoutes from './routes/blog.routes.js';
 import paymentRoutes from './routes/payment.routes.js';
 import reviewRoutes from './routes/review.routes.js';
 import commentRoutes from './routes/comment.routes.js';
+import favoriteRoutes from './routes/favorite.routes.js';
 
 dotenv.config();
 
 const app = express();
 
-app.use(cors());
 app.use(express.json());
 // Cấu hình CORS chi tiết hơn
 app.use(cors({
@@ -43,6 +43,7 @@ app.use('/api/blogs', blogRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/comments', commentRoutes);
+app.use('/api/favorites', favoriteRoutes);
 
 app.get("/", (req, res) => {
   const baseUrl = `${req.protocol}://${req.get("host")}`;
