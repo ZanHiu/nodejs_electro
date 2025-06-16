@@ -8,7 +8,8 @@ import {
   getProductsByCategory, 
   getProductsByBrand, 
   getFilteredProducts, 
-  searchProducts, 
+  searchProducts,
+  getProductDetail
 } from '../controllers/product.controller.js';
 import { authMiddleware } from '../middlewares/auth.middleware.js';
 import { sellerMiddleware } from '../middlewares/seller.middleware.js';
@@ -25,5 +26,6 @@ router.get('/category/:id', getProductsByCategory);
 router.get('/brand/:id', getProductsByBrand);
 router.get('/filter', getFilteredProducts);
 router.get('/search', searchProducts);
+router.get('/:id', getProductDetail);
 
 export default router;
