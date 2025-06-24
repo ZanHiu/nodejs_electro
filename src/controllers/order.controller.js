@@ -1,12 +1,13 @@
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import User from '../models/User.js';
+import Coupon from '../models/Coupon.js';
 import { OrderStatus, PaymentStatus } from '../utils/constants.js';
 import mongoose from 'mongoose';
 
 export const createOrder = async (req, res) => {
   try {
-    const { address, items, paymentMethod } = req.body;
+    const { address, items, paymentMethod, couponCode } = req.body;
 
     if (!address || items.length === 0) {
       return res.status(400).json({ success: false, message: "Invalid data" });
@@ -31,7 +32,43 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    const totalAmount = amount + Math.floor(amount * 0.02);
+    let totalAmount = amount;
+    let couponDiscount = 0;
+    let couponDetails = null;
+
+    // Validate and apply coupon if provided
+    if (couponCode) {
+      const coupon = await Coupon.findOne({ 
+        code: couponCode.toUpperCase(),
+        isActive: true
+      });
+
+      if (coupon) {
+        const now = new Date();
+        if (now >= new Date(coupon.startDate) && now <= new Date(coupon.endDate)) {
+          if (coupon.usedCount < coupon.maxUses) {
+            if (amount >= coupon.minOrderAmount) {
+              if (coupon.type === 'PERCENTAGE') {
+                couponDiscount = Math.floor((amount * coupon.value) / 100);
+              } else {
+                couponDiscount = coupon.value;
+              }
+              totalAmount -= couponDiscount;
+              couponDetails = {
+                code: coupon.code,
+                type: coupon.type,
+                value: coupon.value,
+                discountAmount: couponDiscount
+              };
+
+              // Increment coupon usage
+              coupon.usedCount += 1;
+              await coupon.save();
+            }
+          }
+        }
+      }
+    }
 
     const order = await Order.create({
       userId: req.user.id,
@@ -42,14 +79,19 @@ export const createOrder = async (req, res) => {
       paymentMethod,
       status: paymentMethod === 'VNPAY' ? OrderStatus.PENDING : OrderStatus.PROCESSING,
       paymentStatus: paymentMethod === 'VNPAY' ? PaymentStatus.PROCESSING : PaymentStatus.PROCESSING,
-      // paymentType: "COD"
+      coupon: couponDetails
     });
 
     const user = await User.findById(req.user.id);
     user.cartItems = {};
     await user.save();
 
-    res.json({ success: true, message: "Order placed", order });
+    res.json({ 
+      success: true, 
+      message: "Order placed", 
+      order,
+      discount: couponDiscount
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
