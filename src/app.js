@@ -14,6 +14,9 @@ import paymentRoutes from './routes/payment.routes.js';
 import reviewRoutes from './routes/review.routes.js';
 import commentRoutes from './routes/comment.routes.js';
 import favoriteRoutes from './routes/favorite.routes.js';
+import couponRoutes from './routes/coupon.routes.js';
+import userCouponRoutes from './routes/userCoupon.routes.js';
+import luckyDrawRoutes from './routes/luckyDraw.routes.js';
 
 dotenv.config();
 
@@ -44,6 +47,9 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/favorites', favoriteRoutes);
+app.use('/api/coupons', couponRoutes);
+app.use('/api/user-coupons', userCouponRoutes);
+app.use('/api/lucky-draw', luckyDrawRoutes);
 
 app.get("/", (req, res) => {
   const baseUrl = `${req.protocol}://${req.get("host")}`;

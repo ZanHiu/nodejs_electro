@@ -42,6 +42,7 @@ const orderSchema = new mongoose.Schema({
     vnpayBankCode: String,
     vnpayPayDate: Date
   },
+  coupon: { type: Object, default: {} },
   date: { type: Number, required: true },
   // paymentType: { type: String, required: true },
 });
