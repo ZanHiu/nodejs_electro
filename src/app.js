@@ -9,7 +9,7 @@ import brandRoutes from './routes/brand.routes.js';
 import userRoutes from './routes/user.routes.js';
 import orderRoutes from './routes/order.routes.js';
 import cartRoutes from './routes/cart.routes.js';
-
+import blogRoutes from './routes/blog.routes.js';
 import paymentRoutes from './routes/payment.routes.js';
 import reviewRoutes from './routes/review.routes.js';
 import commentRoutes from './routes/comment.routes.js';
@@ -42,7 +42,7 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/cart', cartRoutes);
-
+app.use('/api/blogs', blogRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/comments', commentRoutes);
