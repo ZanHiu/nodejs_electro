@@ -21,7 +21,7 @@ import luckyDrawRoutes from './routes/luckyDraw.routes.js';
 dotenv.config();
 
 const app = express();
-
+app.use(cors());
 app.use(express.json());
 // Cấu hình CORS chi tiết hơn
 app.use(cors({
