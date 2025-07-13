@@ -107,6 +107,46 @@ export const getOrders = async (req, res) => {
   }
 };
 
+export const getPendingOrders = async (req, res) => {
+  try {
+    const orders = await Order.find({ userId: req.user.id, status: OrderStatus.PENDING })
+      .populate('address items.product');
+    res.json({ success: true, orders });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getProcessingOrders = async (req, res) => {
+  try {
+    const orders = await Order.find({ userId: req.user.id, status: OrderStatus.PROCESSING })
+      .populate('address items.product');
+    res.json({ success: true, orders });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getDeliveredOrders = async (req, res) => {
+  try {
+    const orders = await Order.find({ userId: req.user.id, status: OrderStatus.DELIVERED })
+      .populate('address items.product');
+    res.json({ success: true, orders });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+export const getCancelledOrders = async (req, res) => {
+  try {
+    const orders = await Order.find({ userId: req.user.id, status: OrderStatus.CANCELLED })
+      .populate('address items.product');
+    res.json({ success: true, orders });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+}
+
 export const getSellerOrders = async (req, res) => {
   try {
     const orders = await Order.find({}).populate('address items.product');

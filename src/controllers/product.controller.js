@@ -53,8 +53,15 @@ export const addProduct = async (req, res) => {
 export const editProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, category, brand, price, offerPrice, existingImages, views } = req.body;
+    const { name, description, category, brand, price, offerPrice, existingImages, views, isActive } = req.body;
     const files = req.files;
+
+    // Nếu chỉ cập nhật trạng thái isActive
+    if (typeof isActive !== 'undefined') {
+      const updated = await Product.findByIdAndUpdate(id, { isActive }, { new: true });
+      if (!updated) return res.status(404).json({ success: false, message: "Product not found" });
+      return res.json({ success: true, message: 'Cập nhật trạng thái thành công', product: updated });
+    }
 
     // Find product
     const product = await Product.findById(id);
@@ -134,6 +141,17 @@ export const deleteProduct = async (req, res) => {
 };
 
 export const getProducts = async (req, res) => {
+  try {
+    const products = await Product.find({ isActive: true })
+      .populate('category')
+      .populate('brand');
+    res.json({ success: true, products });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getSellerProducts = async (req, res) => {
   try {
     const products = await Product.find({})
       .populate('category')

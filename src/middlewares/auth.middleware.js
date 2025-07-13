@@ -26,6 +26,21 @@ export const authMiddleware = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('Auth error:', error);
-    res.status(401).json({ success: false, message: 'Unauthorized' });
+    
+    // Xử lý lỗi token hết hạn cụ thể
+    if (error.reason === 'token-expired') {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Token đã hết hạn, vui lòng đăng nhập lại',
+        code: 'TOKEN_EXPIRED'
+      });
+    }
+    
+    // Xử lý các lỗi khác
+    res.status(401).json({ 
+      success: false, 
+      message: 'Token không hợp lệ hoặc đã hết hạn',
+      code: 'INVALID_TOKEN'
+    });
   }
 };

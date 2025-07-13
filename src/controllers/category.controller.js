@@ -50,8 +50,15 @@ export const addCategory = async (req, res) => {
 export const editCategory = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, description, cateId, existingImages, views } = req.body;
+        const { name, description, cateId, existingImages, views, isActive } = req.body;
         const files = req.files;
+
+        // Nếu chỉ cập nhật trạng thái isActive
+        if (typeof isActive !== 'undefined') {
+            const updated = await Category.findByIdAndUpdate(id, { isActive }, { new: true });
+            if (!updated) return res.status(404).json({ success: false, message: "Category not found" });
+            return res.json({ success: true, message: 'Cập nhật trạng thái thành công', category: updated });
+        }
 
         // Find category and check ownership
         const category = await Category.findById(id);
@@ -135,7 +142,7 @@ export const deleteCategory = async (req, res) => {
 
 export const getCategories = async (req, res) => {
     try {
-        const categories = await Category.find({});
+        const categories = await Category.find({ isActive: true });
         res.json({ success: true, categories });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -144,7 +151,7 @@ export const getCategories = async (req, res) => {
 
 export const getTopCategories = async (req, res) => {
     try {
-        const topCategories = await Category.find({})
+        const topCategories = await Category.find({ isActive: true })
             .sort('-views')
             .limit(10);
 

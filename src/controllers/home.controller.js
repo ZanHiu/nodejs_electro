@@ -3,19 +3,19 @@ import Product from '../models/Product.js';
 export const getHomeProducts = async (req, res) => {
   try {
     // Get new products
-    const newProducts = await Product.find({})
+    const newProducts = await Product.find({ isActive: true })
       .sort({ createdAt: -1 })
-      .limit(5);
+      .limit(8);
 
     // Get sale products
-    const saleProducts = await Product.find({ offerPrice: { $ne: null } })
+    const saleProducts = await Product.find({ offerPrice: { $ne: null }, isActive: true })
       .sort({ offerPrice: 1 })
-      .limit(5);
+      .limit(8);
 
     // Get hot products
-    const hotProducts = await Product.find({})
+    const hotProducts = await Product.find({ isActive: true })
       .sort({ views: -1 })
-      .limit(5);
+      .limit(8);
 
     res.json({ 
       success: true, 

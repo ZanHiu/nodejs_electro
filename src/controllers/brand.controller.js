@@ -52,8 +52,15 @@ export const addBrand = async (req, res) => {
 export const editBrand = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, brandId, existingImages, views } = req.body;
+    const { name, description, brandId, existingImages, views, isActive } = req.body;
     const files = req.files;
+
+    // Nếu chỉ cập nhật trạng thái isActive
+    if (typeof isActive !== 'undefined') {
+      const updated = await Brand.findByIdAndUpdate(id, { isActive }, { new: true });
+      if (!updated) return res.status(404).json({ success: false, message: "Brand not found" });
+      return res.json({ success: true, message: 'Cập nhật trạng thái thành công', brand: updated });
+    }
 
     // Find brand and check ownership
     const brand = await Brand.findById(id);
@@ -141,7 +148,7 @@ export const deleteBrand = async (req, res) => {
 
 export const getBrands = async (req, res) => {
   try {
-    const brands = await Brand.find({});
+    const brands = await Brand.find({ isActive: true });
     res.json({ success: true, brands });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -150,7 +157,7 @@ export const getBrands = async (req, res) => {
 
 export const getTopBrands = async (req, res) => {
   try {
-    const topBrands = await Brand.find({}).sort("-views").limit(10);
+    const topBrands = await Brand.find({ isActive: true }).sort("-views").limit(10);
 
     res.json({ success: true, topBrands });
   } catch (error) {

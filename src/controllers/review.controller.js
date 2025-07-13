@@ -77,3 +77,15 @@ export const getReviewsByProduct = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+export const getAllReviews = async (req, res) => {
+  try {
+    const reviews = await Review.find({ type: 'product' })
+      .populate('userId', 'name imageUrl')
+      .sort({ createdAt: -1 });
+
+    res.json({ success: true, reviews: reviews });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
