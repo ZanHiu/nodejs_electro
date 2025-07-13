@@ -9,9 +9,10 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.post('/add', authMiddleware, sellerMiddleware, upload.array('images'), addCategory);
 router.put('/edit/:id', authMiddleware, sellerMiddleware, upload.array('images'), editCategory);
+router.put('/update/:id', authMiddleware, editCategory);
 router.delete('/delete/:id', authMiddleware, sellerMiddleware, deleteCategory);
 router.get('/list', getCategories);
 router.get('/top', getTopCategories);
-router.get('/seller-list', authMiddleware, sellerMiddleware, getCategories); // getSellerCategories
+router.get('/seller-list', authMiddleware, sellerMiddleware, getSellerCategories);
 
 export default router;
