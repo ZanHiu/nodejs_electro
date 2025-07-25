@@ -25,7 +25,7 @@ app.use(express.json());
 // Cấu hình CORS chi tiết hơn
 app.use(cors({
   origin: [
-    'https://electro-nextjs.vercel.app',
+    'https://nextjs-electro-datn.vercel.app',
     'http://localhost:3000'
   ],
   credentials: true,
