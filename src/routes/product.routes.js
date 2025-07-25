@@ -18,7 +18,7 @@ import { sellerMiddleware } from '../middlewares/seller.middleware.js';
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-router.post('/add', authMiddleware, sellerMiddleware, upload.array('images'), addProduct);
+router.post('/add', authMiddleware, sellerMiddleware, upload.any(), addProduct);
 router.put('/edit/:id', authMiddleware, sellerMiddleware, upload.array('images'), editProduct);
 router.put('/update/:id', authMiddleware, editProduct);
 router.delete('/delete/:id', authMiddleware, sellerMiddleware, deleteProduct);

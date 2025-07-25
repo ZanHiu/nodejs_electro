@@ -2,6 +2,7 @@ import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import User from '../models/User.js';
 import Coupon from '../models/Coupon.js';
+import ProductVariant from '../models/ProductVariant.js';
 import { OrderStatus, PaymentStatus } from '../utils/constants.js';
 import mongoose from 'mongoose';
 
@@ -21,7 +22,20 @@ export const createOrder = async (req, res) => {
       if (!product) {
         return res.status(400).json({ success: false, message: `Product not found: ${item.product}` });
       }
-      amount += product.offerPrice * item.quantity;
+      let price = 0;
+      if (item.variant) {
+        const variant = await ProductVariant.findById(item.variant);
+        if (!variant) {
+          return res.status(400).json({ success: false, message: `Variant not found: ${item.variant}` });
+        }
+        price = variant.offerPrice;
+      } else {
+        price = product.offerPrice;
+      }
+      if (typeof price !== 'number' || isNaN(price)) {
+        return res.status(400).json({ success: false, message: `Invalid price for product/variant` });
+      }
+      amount += price * item.quantity;
       validItems.push(item);
     }
 
@@ -100,7 +114,9 @@ export const createOrder = async (req, res) => {
 export const getOrders = async (req, res) => {
   try {
     const orders = await Order.find({ userId: req.user.id })
-      .populate('address items.product');
+      .populate('address')
+      .populate('items.product')
+      .populate('items.variant');
     res.json({ success: true, orders });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -110,7 +126,9 @@ export const getOrders = async (req, res) => {
 export const getPendingOrders = async (req, res) => {
   try {
     const orders = await Order.find({ userId: req.user.id, status: OrderStatus.PENDING })
-      .populate('address items.product');
+      .populate('address')
+      .populate('items.product')
+      .populate('items.variant');
     res.json({ success: true, orders });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -120,7 +138,9 @@ export const getPendingOrders = async (req, res) => {
 export const getProcessingOrders = async (req, res) => {
   try {
     const orders = await Order.find({ userId: req.user.id, status: OrderStatus.PROCESSING })
-      .populate('address items.product');
+      .populate('address')
+      .populate('items.product')
+      .populate('items.variant');
     res.json({ success: true, orders });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -130,7 +150,9 @@ export const getProcessingOrders = async (req, res) => {
 export const getDeliveredOrders = async (req, res) => {
   try {
     const orders = await Order.find({ userId: req.user.id, status: OrderStatus.DELIVERED })
-      .populate('address items.product');
+      .populate('address')
+      .populate('items.product')
+      .populate('items.variant');
     res.json({ success: true, orders });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -140,7 +162,9 @@ export const getDeliveredOrders = async (req, res) => {
 export const getCancelledOrders = async (req, res) => {
   try {
     const orders = await Order.find({ userId: req.user.id, status: OrderStatus.CANCELLED })
-      .populate('address items.product');
+      .populate('address')
+      .populate('items.product')
+      .populate('items.variant');
     res.json({ success: true, orders });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -149,7 +173,10 @@ export const getCancelledOrders = async (req, res) => {
 
 export const getSellerOrders = async (req, res) => {
   try {
-    const orders = await Order.find({}).populate('address items.product');
+    const orders = await Order.find({})
+      .populate('address')
+      .populate('items.product')
+      .populate('items.variant');
     res.json({ success: true, orders });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -159,9 +186,9 @@ export const getSellerOrders = async (req, res) => {
 export const getOrderDetail = async (req, res) => {
   try {
     const { id } = req.params;
-    
     const order = await Order.findById(id)
       .populate('items.product')
+      .populate('items.variant')
       .populate('address');
       
     if (!order) {
