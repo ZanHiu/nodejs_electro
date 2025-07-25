@@ -1,5 +1,6 @@
 import { v2 as cloudinary } from 'cloudinary';
 import Product from '../models/Product.js';
+import ProductVariant from '../models/ProductVariant.js';
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -9,42 +10,104 @@ cloudinary.config({
 
 export const addProduct = async (req, res) => {
   try {
-    const { name, description, category, brand, price, offerPrice, views } = req.body;
+    const { name, description, category, brand, views } = req.body;
+    let variants = req.body.variants;
+    let colors = req.body.colors;
     const files = req.files;
 
-    if (!files || files.length === 0) {
-      return res.status(400).json({ success: false, message: "No images uploaded" });
+    // Parse lại variants và colors nếu là string
+    if (typeof variants === 'string') {
+      try {
+        variants = JSON.parse(variants);
+      } catch (e) {
+        variants = [];
+      }
+    }
+    if (typeof colors === 'string') {
+      try {
+        colors = JSON.parse(colors);
+      } catch (e) {
+        colors = [];
+      }
     }
 
-    const uploadPromises = files.map(file => {
-      return new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          { resource_type: "auto" },
-          (error, result) => {
-            if (error) reject(error);
-            else resolve(result);
-          }
-        );
-        stream.end(file.buffer);
-      });
-    });
+    let specs = req.body.specs;
+    if (typeof specs === 'string') {
+      try {
+        specs = JSON.parse(specs);
+      } catch (e) {
+        specs = {};
+      }
+    }
 
-    const results = await Promise.all(uploadPromises);
-    const images = results.map(result => result.secure_url);
+    // Upload ảnh cho từng màu
+    let colorImageMap = {}; // { colorName: [url1, url2, ...] }
+    for (let cIdx = 0; cIdx < colors.length; cIdx++) {
+      const color = colors[cIdx];
+      const colorImages = files
+        .filter(f => f.fieldname.startsWith(`colorImages_${cIdx}_`))
+        .sort((a, b) => {
+          const aIdx = parseInt(a.fieldname.split('_').pop());
+          const bIdx = parseInt(b.fieldname.split('_').pop());
+          return aIdx - bIdx;
+        });
+      if (!colorImages.length) {
+        return res.status(400).json({ success: false, message: `Màu thứ ${cIdx + 1} chưa có ảnh!` });
+      }
+      let imageUrls = [];
+      for (const file of colorImages) {
+        const result = await new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            { resource_type: "auto" },
+            (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
+            }
+          );
+          stream.end(file.buffer);
+        });
+        imageUrls.push(result.secure_url);
+      }
+      colorImageMap[color.name] = imageUrls;
+    }
 
+    // Tạo sản phẩm chính
     const newProduct = await Product.create({
       name,
       description,
       category,
       brand,
-      price: Number(price),
-      offerPrice: Number(offerPrice),
-      image: images,
       views: Number(views),
       date: Date.now(),
+      specs: specs || {},
     });
 
-    res.json({ success: true, message: "Upload successful", newProduct });
+    // Tạo các variant, lấy ảnh từ màu tương ứng
+    let createdVariants = [];
+    if (Array.isArray(variants) && variants.length > 0) {
+      for (let vIdx = 0; vIdx < variants.length; vIdx++) {
+        const variant = variants[vIdx];
+        const colorName = variant.color;
+        const imageUrls = colorImageMap[colorName] || [];
+        if (!imageUrls.length) {
+          return res.status(400).json({ success: false, message: `Màu '${colorName}' của biến thể thứ ${vIdx + 1} chưa có ảnh!` });
+        }
+        // Gom các trường attributes động
+        const attributes = { color: colorName };
+        if (variant.ram) attributes.ram = variant.ram;
+        if (variant.rom) attributes.rom = variant.rom;
+        const variantDoc = await ProductVariant.create({
+          productId: newProduct._id,
+          attributes,
+          images: imageUrls,
+          price: Number(variant.price),
+          offerPrice: Number(variant.offerPrice),
+        });
+        createdVariants.push(variantDoc);
+      }
+    }
+
+    res.json({ success: true, message: "Thêm sản phẩm thành công", newProduct, variants: createdVariants });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -59,14 +122,14 @@ export const editProduct = async (req, res) => {
     // Nếu chỉ cập nhật trạng thái isActive
     if (typeof isActive !== 'undefined') {
       const updated = await Product.findByIdAndUpdate(id, { isActive }, { new: true });
-      if (!updated) return res.status(404).json({ success: false, message: "Product not found" });
+      if (!updated) return res.status(404).json({ success: false, message: "Không tìm thấy sản phẩm" });
       return res.json({ success: true, message: 'Cập nhật trạng thái thành công', product: updated });
     }
 
     // Find product
     const product = await Product.findById(id);
     if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found" });
+      return res.status(404).json({ success: false, message: "Không tìm thấy sản phẩm" });
     }
 
     // Handle new image uploads if any
@@ -110,7 +173,7 @@ export const editProduct = async (req, res) => {
 
     res.json({ 
       success: true, 
-      message: "Product updated successfully", 
+      message: "Cập nhật sản phẩm thành công", 
       product: updatedProduct 
     });
   } catch (error) {
@@ -125,7 +188,7 @@ export const deleteProduct = async (req, res) => {
     // Find product
     const product = await Product.findById(id);
     if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found" });
+      return res.status(404).json({ success: false, message: "Không tìm thấy sản phẩm" });
     }
 
     // Delete product
@@ -133,7 +196,7 @@ export const deleteProduct = async (req, res) => {
 
     res.json({ 
       success: true, 
-      message: "Product deleted successfully"
+      message: "Xóa sản phẩm thành công",
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -145,7 +208,12 @@ export const getProducts = async (req, res) => {
     const products = await Product.find({ isActive: true })
       .populate('category')
       .populate('brand');
-    res.json({ success: true, products });
+    // Lấy variants cho từng product
+    const productsWithVariants = await Promise.all(products.map(async (product) => {
+      const variants = await ProductVariant.find({ productId: product._id });
+      return { ...product.toObject(), variants };
+    }));
+    res.json({ success: true, products: productsWithVariants });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -156,7 +224,12 @@ export const getSellerProducts = async (req, res) => {
     const products = await Product.find({})
       .populate('category')
       .populate('brand');
-    res.json({ success: true, products });
+    // Lấy variants cho từng product
+    const productsWithVariants = await Promise.all(products.map(async (product) => {
+      const variants = await ProductVariant.find({ productId: product._id });
+      return { ...product.toObject(), variants };
+    }));
+    res.json({ success: true, products: productsWithVariants });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -237,10 +310,13 @@ export const getProductDetail = async (req, res) => {
       .populate('brand');
     
     if (!product) {
-      return res.status(404).json({ success: false, message: "Product not found" });
+      return res.status(404).json({ success: false, message: "Không tìm thấy sản phẩm" });
     }
 
-    res.json({ success: true, product });
+    // Lấy danh sách variant của sản phẩm này
+    const variants = await ProductVariant.find({ productId: id });
+
+    res.json({ success: true, product, variants });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
