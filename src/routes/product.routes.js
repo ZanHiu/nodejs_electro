@@ -19,7 +19,7 @@ const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 router.post('/add', authMiddleware, sellerMiddleware, upload.any(), addProduct);
-router.put('/edit/:id', authMiddleware, sellerMiddleware, upload.array('images'), editProduct);
+router.put('/edit/:id', authMiddleware, sellerMiddleware, upload.any(), editProduct);
 router.put('/update/:id', authMiddleware, editProduct);
 router.delete('/delete/:id', authMiddleware, sellerMiddleware, deleteProduct);
 router.get('/list', getProducts);

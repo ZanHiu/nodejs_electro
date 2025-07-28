@@ -16,6 +16,7 @@ import commentRoutes from './routes/comment.routes.js';
 import favoriteRoutes from './routes/favorite.routes.js';
 import couponRoutes from './routes/coupon.routes.js';
 import userCouponRoutes from './routes/userCoupon.routes.js';
+import openrouterRoutes from './routes/openrouter.routes.js';
 
 dotenv.config();
 
@@ -50,6 +51,7 @@ app.use('/api/comments', commentRoutes);
 app.use('/api/favorites', favoriteRoutes);
 app.use('/api/coupons', couponRoutes);
 app.use('/api/user-coupons', userCouponRoutes);
+app.use('/api/openrouter', openrouterRoutes);
 
 app.get("/", (req, res) => {
   const baseUrl = `${req.protocol}://${req.get("host")}`;
