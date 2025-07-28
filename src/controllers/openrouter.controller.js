@@ -58,7 +58,7 @@ CHỨC NĂNG:
         headers: {
           "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": "http://localhost:3000",
+          "HTTP-Referer": "http://localhost:3000" || "https://nextjs-electro-datn.vercel.app",
           "X-Title": "Electro E-commerce"
         }
       }
