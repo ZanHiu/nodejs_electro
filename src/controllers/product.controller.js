@@ -319,7 +319,14 @@ export const getProductsByCategory = async (req, res) => {
     const products = await Product.find({ category: id })
       .populate('category')
       .populate('brand');
-    res.json({ success: true, products });
+    
+    // Lấy variants cho từng product
+    const productsWithVariants = await Promise.all(products.map(async (product) => {
+      const variants = await ProductVariant.find({ productId: product._id });
+      return { ...product.toObject(), variants };
+    }));
+    
+    res.json({ success: true, products: productsWithVariants });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -331,7 +338,14 @@ export const getProductsByBrand = async (req, res) => {
     const products = await Product.find({ brand: id })
       .populate('category')
       .populate('brand');
-    res.json({ success: true, products });
+    
+    // Lấy variants cho từng product
+    const productsWithVariants = await Promise.all(products.map(async (product) => {
+      const variants = await ProductVariant.find({ productId: product._id });
+      return { ...product.toObject(), variants };
+    }));
+    
+    res.json({ success: true, products: productsWithVariants });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -352,7 +366,14 @@ export const getFilteredProducts = async (req, res) => {
     const products = await Product.find(query)
       .populate('category')
       .populate('brand');
-    res.json({ success: true, products });
+    
+    // Lấy variants cho từng product
+    const productsWithVariants = await Promise.all(products.map(async (product) => {
+      const variants = await ProductVariant.find({ productId: product._id });
+      return { ...product.toObject(), variants };
+    }));
+    
+    res.json({ success: true, products: productsWithVariants });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -374,7 +395,13 @@ export const searchProducts = async (req, res) => {
     .populate('category')
     .populate('brand');
 
-    res.json({ success: true, products });
+    // Lấy variants cho từng product
+    const productsWithVariants = await Promise.all(products.map(async (product) => {
+      const variants = await ProductVariant.find({ productId: product._id });
+      return { ...product.toObject(), variants };
+    }));
+
+    res.json({ success: true, products: productsWithVariants });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

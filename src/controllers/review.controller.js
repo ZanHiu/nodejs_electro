@@ -27,8 +27,7 @@ export const createReview = async (req, res) => {
     const existingReview = await Review.findOne({
       userId,
       targetId,
-      orderId,
-      type: 'product'
+      orderId
     });
 
     if (existingReview) {
@@ -48,8 +47,7 @@ export const createReview = async (req, res) => {
         targetId,
         orderId,
         content,
-        ratingValue: ratingValue > 0 ? ratingValue : undefined,
-        type: 'product'
+        ratingValue: ratingValue > 0 ? ratingValue : undefined
       });
       return res.json({ 
         success: true, 
@@ -63,11 +61,39 @@ export const createReview = async (req, res) => {
   }
 };
 
+export const updateReview = async (req, res) => {
+  try {
+    const { reviewId } = req.params;
+    const { content, ratingValue } = req.body;
+    const userId = req.user.id;
+
+    const review = await Review.findOne({ _id: reviewId, userId });
+    if (!review) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy đánh giá hoặc bạn không có quyền chỉnh sửa"
+      });
+    }
+
+    review.content = content;
+    review.ratingValue = ratingValue > 0 ? ratingValue : undefined;
+    await review.save();
+
+    res.json({ 
+      success: true, 
+      review,
+      message: "Cập nhật đánh giá thành công." 
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
 export const getReviewsByProduct = async (req, res) => {
   try {
     const { productId } = req.params;
     // Chỉ cần find và populate user
-    const reviews = await Review.find({ targetId: productId, type: 'product' })
+    const reviews = await Review.find({ targetId: productId })
       .populate('userId', 'name imageUrl')
       .sort({ createdAt: -1 }); // Sắp xếp mới nhất lên trước
 
@@ -80,11 +106,77 @@ export const getReviewsByProduct = async (req, res) => {
 
 export const getAllReviews = async (req, res) => {
   try {
-    const reviews = await Review.find({ type: 'product' })
+    const reviews = await Review.find()
       .populate('userId', 'name imageUrl')
       .sort({ createdAt: -1 });
 
     res.json({ success: true, reviews: reviews });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Lấy reviews cho seller (có phân trang và filter)
+export const fetchSellerReviews = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, search, rating } = req.query;
+    const skip = (page - 1) * limit;
+
+    let query = {};
+    
+    // Filter theo rating nếu có
+    if (rating && rating !== 'all') {
+      query.ratingValue = parseInt(rating);
+    }
+
+    // Filter theo search nếu có
+    if (search) {
+      query.$or = [
+        { content: { $regex: search, $options: 'i' } },
+        { 'userId.name': { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const reviews = await Review.find(query)
+      .populate('userId', 'name imageUrl')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Review.countDocuments(query);
+
+    res.json({ 
+      success: true, 
+      reviews,
+      total,
+      currentPage: parseInt(page),
+      totalPages: Math.ceil(total / limit)
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// Xóa review
+export const deleteReview = async (req, res) => {
+  try {
+    const { reviewId } = req.params;
+    const userId = req.user.id;
+
+    const review = await Review.findOne({ _id: reviewId, userId });
+    if (!review) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy đánh giá hoặc bạn không có quyền xóa"
+      });
+    }
+
+    await review.deleteOne();
+
+    res.json({ 
+      success: true, 
+      message: "Xóa đánh giá thành công!"
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
