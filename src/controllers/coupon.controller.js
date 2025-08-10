@@ -1,4 +1,5 @@
 import Coupon from '../models/Coupon.js';
+import UserCoupon from '../models/UserCoupon.js';
 
 export const createCoupon = async (req, res) => {
   try {
@@ -9,20 +10,38 @@ export const createCoupon = async (req, res) => {
       startDate,
       endDate,
       maxUses,
-      minOrderAmount
+      minOrderAmount,
+      isInfinite,
+      isUnlimitedUses,
+      isNoMinOrder
     } = req.body;
 
     // Xử lý ngày: ép startDate về 00:00:00 và endDate về 23:59:59
-    const start = new Date(startDate);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(endDate);
-    end.setHours(23, 59, 59, 999);
+    let start, end;
+    if (!isInfinite && startDate && endDate) {
+      start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
 
-    // Validate dates
-    if (start >= end) {
+      // Validate dates
+      if (start >= end) {
+        return res.status(400).json({
+          success: false,
+          message: 'Ngày kết thúc phải sau ngày bắt đầu'
+        });
+      }
+    } else if (isInfinite) {
+      // Nếu vô hạn thì set ngày hiện tại làm startDate và ngày xa trong tương lai làm endDate
+      start = new Date();
+      start.setHours(0, 0, 0, 0);
+      end = new Date();
+      end.setFullYear(end.getFullYear() + 100); // 100 năm sau
+      end.setHours(23, 59, 59, 999);
+    } else {
       return res.status(400).json({
         success: false,
-        message: 'Ngày kết thúc phải sau ngày bắt đầu'
+        message: 'Vui lòng chọn ngày bắt đầu và kết thúc hoặc chọn hiệu lực vô hạn'
       });
     }
 
@@ -34,14 +53,40 @@ export const createCoupon = async (req, res) => {
       });
     }
 
+    // Xử lý maxUses
+    let finalMaxUses;
+    if (isUnlimitedUses) {
+      finalMaxUses = 999999; // Số lớn để coi như vô hạn
+    } else if (maxUses && maxUses > 0) {
+      finalMaxUses = maxUses;
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Vui lòng nhập số lượng sử dụng tối đa hoặc chọn sử dụng vô hạn'
+      });
+    }
+
+    // Xử lý minOrderAmount
+    let finalMinOrderAmount;
+    if (isNoMinOrder) {
+      finalMinOrderAmount = 0;
+    } else if (minOrderAmount !== undefined && minOrderAmount !== null) {
+      finalMinOrderAmount = minOrderAmount;
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Vui lòng nhập giá trị đơn hàng tối thiểu hoặc chọn không giới hạn đơn hàng'
+      });
+    }
+
     const coupon = await Coupon.create({
       code: code.toUpperCase(),
       type,
       value,
       startDate: start,
       endDate: end,
-      maxUses,
-      minOrderAmount,
+      maxUses: finalMaxUses,
+      minOrderAmount: finalMinOrderAmount,
       createdBy: req.user.id
     });
 
@@ -220,6 +265,20 @@ export const validateCoupon = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: `Đơn hàng phải có giá trị tối thiểu ${coupon.minOrderAmount}`
+      });
+    }
+
+    // Kiểm tra user đã sử dụng coupon này chưa
+    const userCoupon = await UserCoupon.findOne({
+      userId: req.user.id,
+      couponId: coupon._id,
+      status: 'USED'
+    });
+
+    if (userCoupon) {
+      return res.status(400).json({
+        success: false,
+        message: 'Bạn đã sử dụng mã giảm giá này trước đó'
       });
     }
 
