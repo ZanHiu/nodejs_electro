@@ -108,8 +108,27 @@ export const editBlog = async (req, res) => {
 
 export const getBlogs = async (req, res) => {
   try {
-    const blogs = await Blog.find({}).populate('userId', 'name');
-    res.json({ success: true, blogs });
+    const { page = 1, limit = 8 } = req.query;
+    const skip = (page - 1) * limit;
+    
+    const blogs = await Blog.find({})
+      .populate('userId', 'name')
+      .skip(skip)
+      .limit(parseInt(limit))
+      .sort({ date: -1 });
+    
+    const total = await Blog.countDocuments({});
+    
+    res.json({ 
+      success: true, 
+      blogs,
+      pagination: {
+        current: parseInt(page),
+        pages: Math.ceil(total / limit),
+        total,
+        limit: parseInt(limit)
+      }
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

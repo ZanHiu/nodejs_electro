@@ -283,15 +283,34 @@ export const deleteProduct = async (req, res) => {
 
 export const getProducts = async (req, res) => {
   try {
+    const { page = 1, limit = 9 } = req.query;
+    const skip = (page - 1) * limit;
+    
     const products = await Product.find({ isActive: true })
       .populate('category')
-      .populate('brand');
+      .populate('brand')
+      .skip(skip)
+      .limit(parseInt(limit))
+      .sort({ date: -1 });
+    
+    const total = await Product.countDocuments({ isActive: true });
+    
     // Lấy variants cho từng product
     const productsWithVariants = await Promise.all(products.map(async (product) => {
       const variants = await ProductVariant.find({ productId: product._id });
       return { ...product.toObject(), variants };
     }));
-    res.json({ success: true, products: productsWithVariants });
+    
+    res.json({ 
+      success: true, 
+      products: productsWithVariants,
+      pagination: {
+        current: parseInt(page),
+        pages: Math.ceil(total / limit),
+        total,
+        limit: parseInt(limit)
+      }
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -353,8 +372,10 @@ export const getProductsByBrand = async (req, res) => {
 
 export const getFilteredProducts = async (req, res) => {
   try {
-    const { categoryId, brandId } = req.query;
-    let query = {};
+    const { categoryId, brandId, page = 1, limit = 9 } = req.query;
+    const skip = (page - 1) * limit;
+    
+    let query = { isActive: true };
 
     if (categoryId !== 'all') {
       query.category = categoryId;
@@ -365,7 +386,12 @@ export const getFilteredProducts = async (req, res) => {
 
     const products = await Product.find(query)
       .populate('category')
-      .populate('brand');
+      .populate('brand')
+      .skip(skip)
+      .limit(parseInt(limit))
+      .sort({ date: -1 });
+    
+    const total = await Product.countDocuments(query);
     
     // Lấy variants cho từng product
     const productsWithVariants = await Promise.all(products.map(async (product) => {
@@ -373,7 +399,16 @@ export const getFilteredProducts = async (req, res) => {
       return { ...product.toObject(), variants };
     }));
     
-    res.json({ success: true, products: productsWithVariants });
+    res.json({ 
+      success: true, 
+      products: productsWithVariants,
+      pagination: {
+        current: parseInt(page),
+        pages: Math.ceil(total / limit),
+        total,
+        limit: parseInt(limit)
+      }
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

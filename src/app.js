@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import connectDB from './config/db.js';
+import dashboardRoutes from './routes/dashboard.routes.js';
 import homeRoutes from './routes/home.routes.js';
 import productRoutes from './routes/product.routes.js';
 import categoryRoutes from './routes/category.routes.js';
@@ -15,8 +16,11 @@ import reviewRoutes from './routes/review.routes.js';
 import commentRoutes from './routes/comment.routes.js';
 import favoriteRoutes from './routes/favorite.routes.js';
 import couponRoutes from './routes/coupon.routes.js';
+import emailRoutes from './routes/email.routes.js';
+import contactRoutes from './routes/contact.routes.js';
 //import luckyDrawRoutes from './routes/luckyDraw.routes.js';
 import userCouponRoutes from './routes/userCoupon.routes.js';
+import userRankRoutes from './routes/userRank.routes.js';
 import openrouterRoutes from './routes/openrouter.routes.js';
 
 dotenv.config();
@@ -38,6 +42,7 @@ app.use(cors({
 // Connect to database
 connectDB();
 
+app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/home', homeRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/brands', brandRoutes);
@@ -50,9 +55,12 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/coupons', couponRoutes);
+app.use('/api/email', emailRoutes);
+app.use('/api/contact', contactRoutes);
 app.use('/api/favorites', favoriteRoutes);
 //app.use('/api/lukeyDraws', luckyDrawRoutes);
 app.use('/api/user-coupons', userCouponRoutes);
+app.use('/api/user-rank', userRankRoutes);
 app.use('/api/openrouter', openrouterRoutes);
 
 app.get("/", (req, res) => {

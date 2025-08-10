@@ -1,5 +1,6 @@
 import Favorite from '../models/Favorite.js';
 import Product from '../models/Product.js';
+import ProductVariant from '../models/ProductVariant.js';
 
 export const addToFavorite = async (req, res) => {
   try {
@@ -58,9 +59,15 @@ export const getFavorites = async (req, res) => {
         ]
       });
 
+    // Lấy variants cho từng product
+    const favoritesWithVariants = await Promise.all(favorites.map(async (favorite) => {
+      const variants = await ProductVariant.find({ productId: favorite.product._id });
+      return { ...favorite.product.toObject(), variants };
+    }));
+
     res.json({ 
       success: true, 
-      favorites: favorites.map(fav => fav.product)
+      favorites: favoritesWithVariants
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

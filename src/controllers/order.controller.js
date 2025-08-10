@@ -2,8 +2,11 @@ import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import User from '../models/User.js';
 import Coupon from '../models/Coupon.js';
+import UserCoupon from '../models/UserCoupon.js';
 import ProductVariant from '../models/ProductVariant.js';
+import UserRank from '../models/UserRank.js';
 import { OrderStatus, PaymentStatus } from '../utils/constants.js';
+import { RANK_THRESHOLDS } from '../utils/rankConstants.js';
 import mongoose from 'mongoose';
 
 export const createOrder = async (req, res) => {
@@ -62,6 +65,20 @@ export const createOrder = async (req, res) => {
         if (now >= new Date(coupon.startDate) && now <= new Date(coupon.endDate)) {
           if (coupon.usedCount < coupon.maxUses) {
             if (amount >= coupon.minOrderAmount) {
+              // Kiểm tra user đã sử dụng coupon này chưa
+              const userCoupon = await UserCoupon.findOne({
+                userId: req.user.id,
+                couponId: coupon._id,
+                status: 'USED'
+              });
+
+              if (userCoupon) {
+                return res.status(400).json({
+                  success: false,
+                  message: "Bạn đã sử dụng mã giảm giá này trước đó"
+                });
+              }
+
               if (coupon.type === 'PERCENTAGE') {
                 couponDiscount = Math.floor((amount * coupon.value) / 100);
               } else {
@@ -78,9 +95,37 @@ export const createOrder = async (req, res) => {
               // Increment coupon usage
               coupon.usedCount += 1;
               await coupon.save();
+
+              // Tạo UserCoupon record để đánh dấu đã sử dụng
+              await UserCoupon.create({
+                userId: req.user.id,
+                couponId: coupon._id,
+                status: 'USED',
+                usedAt: new Date()
+              });
+            } else {
+              return res.status(400).json({
+                success: false,
+                message: `Đơn hàng phải có giá trị tối thiểu ${coupon.minOrderAmount.toLocaleString()}${currency}`
+              });
             }
+          } else {
+            return res.status(400).json({
+              success: false,
+              message: "Mã giảm giá đã hết lượt sử dụng"
+            });
           }
+        } else {
+          return res.status(400).json({
+            success: false,
+            message: "Mã giảm giá đã hết hạn"
+          });
         }
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: "Mã giảm giá không tồn tại hoặc đã bị vô hiệu hóa"
+        });
       }
     }
 
@@ -248,6 +293,53 @@ export const updateOrderStatus = async (req, res) => {
 
     order.status = status;
     await order.save();
+
+    // Nếu đơn hàng được giao thành công, cập nhật rank của user
+    if (status === OrderStatus.DELIVERED && order.paymentStatus === PaymentStatus.PAID) {
+      try {
+        // Tính tổng chi tiêu mới
+        const deliveredOrders = await Order.find({
+          userId: order.userId,
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PAID
+        });
+        
+        const totalSpent = deliveredOrders.reduce((total, ord) => total + ord.amount, 0);
+        
+        // Xác định rank mới
+        const newRank = Object.keys(RANK_THRESHOLDS).reverse().find(rank => 
+          totalSpent >= RANK_THRESHOLDS[rank]
+        ) || 'IRON';
+        
+        // Cập nhật hoặc tạo UserRank
+        let userRank = await UserRank.findOne({ userId: order.userId });
+        if (!userRank) {
+          userRank = new UserRank({
+            userId: order.userId,
+            currentRank: newRank,
+            totalSpent
+          });
+        } else {
+          const oldRank = userRank.currentRank;
+          userRank.currentRank = newRank;
+          userRank.totalSpent = totalSpent;
+          
+          // Nếu rank được nâng lên, cập nhật thời gian và tăng spin count
+          if (newRank !== oldRank && RANK_THRESHOLDS[newRank] > RANK_THRESHOLDS[oldRank]) {
+            userRank.lastRankUpgrade = new Date();
+            
+            // Tăng spin count cho PLATINUM và DIAMOND
+            if (newRank === 'PLATINUM' || newRank === 'DIAMOND') {
+              userRank.spinCount += 1;
+            }
+          }
+        }
+        
+        await userRank.save();
+      } catch (error) {
+        console.error('Error updating user rank:', error);
+      }
+    }
 
     res.json({
       success: true,
