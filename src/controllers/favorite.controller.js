@@ -59,10 +59,63 @@ export const getFavorites = async (req, res) => {
         ]
       });
 
-    // Lấy variants cho từng product
+    // Xử lý variants với đầy đủ thông tin EAV cho từng product
     const favoritesWithVariants = await Promise.all(favorites.map(async (favorite) => {
-      const variants = await ProductVariant.find({ productId: favorite.product._id });
-      return { ...favorite.product.toObject(), variants };
+      const variants = await ProductVariant.find({ productId: favorite.product._id })
+        .populate('attributeId')
+        .populate('imageId');
+      
+      // Xử lý variants để có cấu trúc dữ liệu rõ ràng
+      const processedVariants = variants.map(variant => {
+        const variantObj = variant.toObject();
+        
+        // Parse attributes từ JSON string
+        let attributes = {};
+        if (variantObj.attributeId && variantObj.attributeId.value) {
+          try {
+            attributes = JSON.parse(variantObj.attributeId.value);
+          } catch (e) {
+            console.error('Error parsing attributes:', e);
+          }
+        }
+        
+        // Lấy images và colorName từ imageId (ProductImage)
+        let images = [];
+        let colorName = '';
+        if (variantObj.imageId) {
+          if (variantObj.imageId.value) {
+            images = Array.isArray(variantObj.imageId.value) ? variantObj.imageId.value : [variantObj.imageId.value];
+          }
+          if (variantObj.imageId.name) {
+            colorName = variantObj.imageId.name;
+          }
+        }
+        
+        return {
+          _id: variantObj._id,
+          price: variantObj.price,
+          offerPrice: variantObj.offerPrice,
+          attributes,
+          images,
+          colorName,
+          createdAt: variantObj.createdAt
+        };
+      });
+      
+      // Chuyển đổi commonAttributes từ Map sang Object
+      const productObj = favorite.product.toObject();
+      let commonAttributes = {};
+      if (productObj.commonAttributes && productObj.commonAttributes instanceof Map) {
+        commonAttributes = Object.fromEntries(productObj.commonAttributes);
+      } else if (productObj.commonAttributes && typeof productObj.commonAttributes === 'object') {
+        commonAttributes = productObj.commonAttributes;
+      }
+      
+      return { 
+        ...productObj, 
+        variants: processedVariants,
+        commonAttributes 
+      };
     }));
 
     res.json({ 

@@ -14,11 +14,12 @@ export const claimCoupon = async (req, res) => {
     }
     // Kiểm tra mã còn hạn không
     const coupon = await Coupon.findById(couponId);
-    if (!coupon || !coupon.isActive) {
+    if (!coupon) {
       return res.status(400).json({ success: false, message: 'Mã không tồn tại hoặc đã hết hạn!' });
     }
     const now = new Date();
-    if (now < coupon.startDate || now > coupon.endDate) {
+    if (coupon.endDate < now || coupon.usedCount >= coupon.maxUses) {
+      await Coupon.findByIdAndUpdate(couponId, { isActive: false });
       return res.status(400).json({ success: false, message: 'Mã đã hết hạn!' });
     }
     // Lưu vào UserCoupon
@@ -29,9 +30,28 @@ export const claimCoupon = async (req, res) => {
   }
 };
 
+// Helper function để cập nhật UserCoupon hết hạn
+const updateExpiredUserCoupons = async () => {
+  const expiredCoupons = await Coupon.find({
+    endDate: { $lt: new Date() }
+  }).select('_id');
+  
+  const expiredCouponIds = expiredCoupons.map(c => c._id);
+  
+  await UserCoupon.updateMany(
+    {
+      couponId: { $in: expiredCouponIds },
+      status: 'RECEIVED'
+    },
+    { status: 'EXPIRED' }
+  );
+};
+
 // Lấy danh sách voucher đã nhận
 export const getMyCoupons = async (req, res) => {
   try {
+    await updateExpiredUserCoupons();
+
     const userId = req.user.id;
     const userCoupons = await UserCoupon.find({ userId })
       .populate('couponId');

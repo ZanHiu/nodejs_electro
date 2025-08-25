@@ -1,6 +1,7 @@
 import UserRank from '../models/UserRank.js';
 import Order from '../models/Order.js';
 import Coupon from '../models/Coupon.js';
+import UserCoupon from '../models/UserCoupon.js';
 import { RANK_THRESHOLDS, RANK_NAMES, RANK_COLORS, SPIN_REWARDS, getNextRank, getRankProgress } from '../utils/rankConstants.js';
 import { OrderStatus, PaymentStatus } from '../utils/constants.js';
 
@@ -135,10 +136,12 @@ export const spinWheel = async (req, res) => {
     
     // Nếu phần thưởng là coupon, tạo coupon cho user
     let coupon = null;
+    let userCoupon = null;
     if (selectedReward.type === 'PERCENTAGE' || selectedReward.type === 'FIXED_AMOUNT') {
       const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
       const couponCode = `LUCKY${random}`;
       
+      // Tạo coupon private (chỉ dành cho user này)
       coupon = await Coupon.create({
         code: couponCode,
         type: selectedReward.type,
@@ -147,7 +150,16 @@ export const spinWheel = async (req, res) => {
         endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 ngày
         maxUses: 1,
         minOrderAmount: 0,
+        isPublic: false, // Mã giảm giá private từ vòng quay
         createdBy: userId
+      });
+      
+      // Tự động thêm vào UserCoupon cho user
+      userCoupon = await UserCoupon.create({
+        userId: userId,
+        couponId: coupon._id,
+        status: 'RECEIVED',
+        receivedAt: new Date()
       });
     }
     
@@ -156,6 +168,7 @@ export const spinWheel = async (req, res) => {
       reward: selectedReward,
       rewardIndex: selectedIndex, // Thêm index để frontend biết vị trí
       coupon: coupon,
+      userCoupon: userCoupon,
       remainingSpins: userRank.spinCount
     });
   } catch (error) {

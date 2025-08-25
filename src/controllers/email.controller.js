@@ -1,6 +1,5 @@
 import nodemailer from 'nodemailer';
 import Newsletter from '../models/Newsletter.js';
-import Contact from '../models/Contact.js';
 
 // Tạo transporter cho Gmail (có thể thay đổi cho dịch vụ khác)
 const createTransporter = () => {

@@ -87,6 +87,7 @@ export const createCoupon = async (req, res) => {
       endDate: end,
       maxUses: finalMaxUses,
       minOrderAmount: finalMinOrderAmount,
+      isPublic: true,
       createdBy: req.user.id
     });
 
@@ -103,8 +104,43 @@ export const createCoupon = async (req, res) => {
   }
 };
 
+// Helper function để cập nhật coupon hết hạn
+const updateExpiredCoupons = async () => {
+  const now = new Date();
+  await Coupon.updateMany(
+    {
+      $or: [
+        { endDate: { $lt: now } },
+        { $expr: { $gte: ["$usedCount", "$maxUses"] } }
+      ],
+      isActive: true
+    },
+    { isActive: false }
+  );
+};
+
+// Helper function để cập nhật UserCoupon hết hạn
+const updateExpiredUserCoupons = async () => {
+  const expiredCoupons = await Coupon.find({
+    endDate: { $lt: new Date() },
+    isActive: false
+  }).select('_id');
+  
+  const expiredCouponIds = expiredCoupons.map(c => c._id);
+  
+  await UserCoupon.updateMany(
+    {
+      couponId: { $in: expiredCouponIds },
+      status: 'RECEIVED'
+    },
+    { status: 'EXPIRED' }
+  );
+};
+
 export const getCoupons = async (req, res) => {
   try {
+    await updateExpiredCoupons();
+    await updateExpiredUserCoupons();
     const coupons = await Coupon.find({})
       .populate('createdBy', 'name email');
     res.json({ success: true, coupons });
@@ -229,6 +265,7 @@ export const deleteCoupon = async (req, res) => {
 
 export const validateCoupon = async (req, res) => {
   try {
+    await updateExpiredCoupons();
     const { code, orderAmount } = req.body;
 
     const coupon = await Coupon.findOne({ 
@@ -306,9 +343,11 @@ export const validateCoupon = async (req, res) => {
 
 export const getPublicCoupons = async (req, res) => {
   try {
+    await updateExpiredCoupons();
     const now = new Date();
     const coupons = await Coupon.find({
       isActive: true,
+      isPublic: true,
       startDate: { $lte: now },
       endDate: { $gte: now }
     });

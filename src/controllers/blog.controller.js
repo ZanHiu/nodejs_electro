@@ -165,7 +165,7 @@ export const deleteBlog = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Blog deleted successfully"
+      message: "Xóa bài viết thành công"
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

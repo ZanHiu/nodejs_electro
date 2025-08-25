@@ -8,14 +8,11 @@ const productSchema = new mongoose.Schema({
   brand: { type: mongoose.Schema.Types.ObjectId, ref: 'brand', required: true },
   date: { type: Number, required: true },
   isActive: { type: Boolean, default: true },
-  specs: {
-    cpu: { type: String },
-    vga: { type: String },
-    os: { type: String },
-    pin: { type: String },
-    manhinh: { type: String },
-    camera: { type: String },
-  },
+  commonAttributes: {
+    type: Map,
+    of: String,
+    default: new Map()
+  }
 });
 
 export default mongoose.model("product", productSchema);

@@ -4,7 +4,7 @@ import { OrderStatus, PaymentStatus } from '../utils/constants.js';
 
 export const createReview = async (req, res) => {
   try {
-    const { targetId, content, ratingValue, orderId } = req.body;
+    const { productId, content, ratingValue, orderId } = req.body;
     const userId = req.user.id;
 
     // Kiểm tra xem đơn hàng có tồn tại và thuộc về người dùng này không
@@ -13,7 +13,7 @@ export const createReview = async (req, res) => {
       userId: userId,
       status: OrderStatus.DELIVERED,
       paymentStatus: PaymentStatus.PAID,
-      'items.product': targetId
+      'items.product': productId
     });
 
     if (!order) {
@@ -26,7 +26,7 @@ export const createReview = async (req, res) => {
     // Kiểm tra xem người dùng đã đánh giá sản phẩm này cho đơn hàng này chưa
     const existingReview = await Review.findOne({
       userId,
-      targetId,
+      productId,
       orderId
     });
 
@@ -44,7 +44,7 @@ export const createReview = async (req, res) => {
       // Nếu chưa có đánh giá cho đơn hàng này, tạo mới
       const review = await Review.create({
         userId,
-        targetId,
+        productId,
         orderId,
         content,
         ratingValue: ratingValue > 0 ? ratingValue : undefined
@@ -92,12 +92,11 @@ export const updateReview = async (req, res) => {
 export const getReviewsByProduct = async (req, res) => {
   try {
     const { productId } = req.params;
-    // Chỉ cần find và populate user
-    const reviews = await Review.find({ targetId: productId })
+    // Sử dụng productId thay vì targetId
+    const reviews = await Review.find({ productId: productId })
       .populate('userId', 'name imageUrl')
-      .sort({ createdAt: -1 }); // Sắp xếp mới nhất lên trước
+      .sort({ createdAt: -1 });
 
-    // Không tính toán average và count ở đây nữa
     res.json({ success: true, reviews: reviews });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

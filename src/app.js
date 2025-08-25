@@ -58,7 +58,6 @@ app.use('/api/coupons', couponRoutes);
 app.use('/api/email', emailRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/favorites', favoriteRoutes);
-//app.use('/api/lukeyDraws', luckyDrawRoutes);
 app.use('/api/user-coupons', userCouponRoutes);
 app.use('/api/user-rank', userRankRoutes);
 app.use('/api/openrouter', openrouterRoutes);

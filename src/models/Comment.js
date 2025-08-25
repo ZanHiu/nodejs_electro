@@ -2,7 +2,8 @@ import mongoose from "mongoose";
 
 const commentSchema = new mongoose.Schema({
   userId: { type: String, required: true, ref: "user" },
-  targetId: { type: String, required: true }, // ID của sản phẩm hoặc blog
+  productId: { type: String, ref: "product" },
+  blogId: { type: String, ref: "blog" },
   type: { type: String, enum: ['product', 'blog'], required: true },
   content: { type: String, required: true },
   parentId: { type: String, ref: "comment" }, // ID của comment cha (nếu là reply)

@@ -66,13 +66,13 @@ export const createOrder = async (req, res) => {
           if (coupon.usedCount < coupon.maxUses) {
             if (amount >= coupon.minOrderAmount) {
               // Kiểm tra user đã sử dụng coupon này chưa
-              const userCoupon = await UserCoupon.findOne({
+              const existingUserCoupon = await UserCoupon.findOne({
                 userId: req.user.id,
-                couponId: coupon._id,
-                status: 'USED'
+                couponId: coupon._id
               });
 
-              if (userCoupon) {
+              // Nếu đã có record với status USED thì không cho dùng lại
+              if (existingUserCoupon && existingUserCoupon.status === 'USED') {
                 return res.status(400).json({
                   success: false,
                   message: "Bạn đã sử dụng mã giảm giá này trước đó"
@@ -96,17 +96,25 @@ export const createOrder = async (req, res) => {
               coupon.usedCount += 1;
               await coupon.save();
 
-              // Tạo UserCoupon record để đánh dấu đã sử dụng
-              await UserCoupon.create({
-                userId: req.user.id,
-                couponId: coupon._id,
-                status: 'USED',
-                usedAt: new Date()
-              });
+              // Cập nhật UserCoupon có sẵn hoặc tạo mới nếu chưa có
+              if (existingUserCoupon) {
+                // Cập nhật record có sẵn
+                existingUserCoupon.status = 'USED';
+                existingUserCoupon.usedAt = new Date();
+                await existingUserCoupon.save();
+              } else {
+                // Tạo mới nếu chưa có record nào
+                await UserCoupon.create({
+                  userId: req.user.id,
+                  couponId: coupon._id,
+                  status: 'USED',
+                  usedAt: new Date()
+                });
+              }
             } else {
               return res.status(400).json({
                 success: false,
-                message: `Đơn hàng phải có giá trị tối thiểu ${coupon.minOrderAmount.toLocaleString()}${currency}`
+                message: `Đơn hàng phải có giá trị tối thiểu ${coupon.minOrderAmount.toLocaleString()}đ`
               });
             }
           } else {
@@ -136,8 +144,8 @@ export const createOrder = async (req, res) => {
       amount: totalAmount,
       date: Date.now(),
       paymentMethod,
-      status: paymentMethod === 'VNPAY' ? OrderStatus.PENDING : OrderStatus.PROCESSING,
-      paymentStatus: paymentMethod === 'VNPAY' ? PaymentStatus.PROCESSING : PaymentStatus.PROCESSING,
+      status: paymentMethod === 'VNPAY' ? OrderStatus.PENDING : OrderStatus.PENDING,
+      paymentStatus: paymentMethod === 'VNPAY' ? PaymentStatus.PENDING : PaymentStatus.PENDING,
       coupon: couponDetails
     });
 
@@ -160,9 +168,69 @@ export const getOrders = async (req, res) => {
   try {
     const orders = await Order.find({ userId: req.user.id })
       .populate('address')
-      .populate('items.product')
-      .populate('items.variant');
-    res.json({ success: true, orders });
+      .populate('items.product');
+    
+    // Xử lý variants với đầy đủ thông tin EAV cho từng order
+    const ordersWithProcessedVariants = await Promise.all(orders.map(async (order) => {
+      const orderObj = order.toObject();
+      
+      // Xử lý từng item trong order
+      const processedItems = await Promise.all(orderObj.items.map(async (item) => {
+        if (item.variant) {
+          // Lấy variant với đầy đủ thông tin EAV
+          const variant = await ProductVariant.findById(item.variant)
+            .populate('attributeId')
+            .populate('imageId');
+          
+          if (variant) {
+            const variantObj = variant.toObject();
+            
+            // Parse attributes từ JSON string
+            let attributes = {};
+            if (variantObj.attributeId && variantObj.attributeId.value) {
+              try {
+                attributes = JSON.parse(variantObj.attributeId.value);
+              } catch (e) {
+                console.error('Error parsing attributes:', e);
+              }
+            }
+            
+            // Lấy images và colorName từ imageId (ProductImage)
+            let images = [];
+            let colorName = '';
+            if (variantObj.imageId) {
+              if (variantObj.imageId.value) {
+                images = Array.isArray(variantObj.imageId.value) ? variantObj.imageId.value : [variantObj.imageId.value];
+              }
+              if (variantObj.imageId.name) {
+                colorName = variantObj.imageId.name;
+              }
+            }
+            
+            return {
+              ...item,
+              variant: {
+                _id: variantObj._id,
+                price: variantObj.price,
+                offerPrice: variantObj.offerPrice,
+                attributes,
+                images,
+                colorName,
+                createdAt: variantObj.createdAt
+              }
+            };
+          }
+        }
+        return item;
+      }));
+      
+      return {
+        ...orderObj,
+        items: processedItems
+      };
+    }));
+    
+    res.json({ success: true, orders: ordersWithProcessedVariants });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -343,7 +411,7 @@ export const updateOrderStatus = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Order status updated successfully'
+      message: 'Cập nhật trạng thái đơn hàng thành công'
     });
   } catch (error) {
     console.error('Error updating order status:', error);
@@ -399,7 +467,7 @@ export const cancelOrder = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Order cancelled successfully'
+      message: 'Hủy đơn hàng thành công'
     });
   } catch (error) {
     console.error('Error cancelling order:', error);
