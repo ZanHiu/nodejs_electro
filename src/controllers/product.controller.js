@@ -119,36 +119,26 @@ export const addProduct = async (req, res) => {
     // Tạo ProductAttribute riêng lẻ cho từng thuộc tính
     const createdAttributeIds = [];
     
-    // Tạo ProductVariant cho từng biến thể x từng màu
+    // Tạo ProductVariant cho từng biến thể
     const createdVariants = [];
     for (const variant of productData.variants) {
-      // Sử dụng selectedAttributeIds thay vì attributeIndices
       let variantAttributeIds = [];
       if (variant.selectedAttributeIds && variant.selectedAttributeIds.length > 0) {
-        // Sử dụng trực tiếp selectedAttributeIds từ frontend
         variantAttributeIds = variant.selectedAttributeIds;
       }
       
-      // Chỉ tạo ProductVariant cho màu được chọn
-      for (const variant of productData.variants) {
-        let variantAttributeIds = [];
-        if (variant.selectedAttributeIds && variant.selectedAttributeIds.length > 0) {
-          variantAttributeIds = variant.selectedAttributeIds;
-        }
+      // Chỉ tạo variant cho màu được chọn
+      const colorIndex = variant.colorIndex || 0;
+      if (colorIndex < createdImages.length) {
+        const productVariant = await ProductVariant.create({
+          productId: newProduct._id,
+          attributeIds: variantAttributeIds,
+          imageId: createdImages[colorIndex]._id, // Chỉ màu được chọn
+          price: Number(variant.price),
+          offerPrice: Number(variant.offerPrice) || 0
+        });
         
-        // Chỉ tạo variant cho màu được chọn
-        const colorIndex = variant.colorIndex || 0;
-        if (colorIndex < createdImages.length) {
-          const productVariant = await ProductVariant.create({
-            productId: newProduct._id,
-            attributeIds: variantAttributeIds,
-            imageId: createdImages[colorIndex]._id, // Chỉ màu được chọn
-            price: Number(variant.price),
-            offerPrice: Number(variant.offerPrice) || 0
-          });
-          
-          createdVariants.push(productVariant);
-        }
+        createdVariants.push(productVariant);
       }
     }
 
@@ -851,7 +841,7 @@ export const getProductDetail = async (req, res) => {
         price: variantObj.price,
         offerPrice: variantObj.offerPrice,
         attributes,
-        attributeIds: variantObj.attributeIds, // SỬA: Thêm variantObj. trước attributeIds
+        attributeIds: variantObj.attributeIds,
         images,
         colorName,
         createdAt: variantObj.createdAt
