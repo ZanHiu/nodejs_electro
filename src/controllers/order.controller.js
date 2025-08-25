@@ -7,7 +7,243 @@ import ProductVariant from '../models/ProductVariant.js';
 import UserRank from '../models/UserRank.js';
 import { OrderStatus, PaymentStatus } from '../utils/constants.js';
 import { RANK_THRESHOLDS } from '../utils/rankConstants.js';
+import nodemailer from 'nodemailer';
 import mongoose from 'mongoose';
+
+// Tạo transporter cho Gmail
+const createTransporter = () => {
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASSWORD
+    }
+  });
+};
+
+// Gửi email xác nhận đơn hàng
+const sendOrderConfirmationEmail = async (userEmail, order, orderItems) => {
+  try {
+    const transporter = createTransporter();
+    
+    // Tạo HTML cho danh sách sản phẩm
+    const itemsHTML = orderItems.map(item => {
+      const itemPrice = item.variant ? item.variant.offerPrice : item.product.offerPrice;
+      const itemTotal = itemPrice * item.quantity;
+      
+      return `
+        <tr style="border-bottom: 1px solid #eee;">
+          <td style="padding: 10px; text-align: left;">
+            <strong>${item.product.name}</strong>
+            ${item.variant ? `<br><small style="color: #666;">Phiên bản: ${item.variant.attributes ? Object.values(JSON.parse(item.variant.attributes)).join(', ') : 'N/A'}</small>` : ''}
+          </td>
+          <td style="padding: 10px; text-align: center;">${item.quantity}</td>
+          <td style="padding: 10px; text-align: right;">${itemPrice.toLocaleString('vi-VN')}đ</td>
+          <td style="padding: 10px; text-align: right;"><strong>${itemTotal.toLocaleString('vi-VN')}đ</strong></td>
+        </tr>
+      `;
+    }).join('');
+    
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: userEmail,
+      subject: `Xác nhận đơn hàng #${order._id.toString().slice(-8).toUpperCase()} - Electro`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9;">
+          <div style="background: linear-gradient(135deg, #ff6b35, #f7931e); padding: 30px; text-align: center; color: white;">
+            <h1 style="margin: 0; font-size: 28px;">✅ Đơn hàng đã được xác nhận!</h1>
+            <p style="margin: 10px 0 0 0; font-size: 16px;">Cảm ơn bạn đã mua sắm tại Electro</p>
+          </div>
+          
+          <div style="padding: 30px; background: white;">
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
+              <h2 style="color: #333; margin: 0 0 15px 0; font-size: 20px;">📋 Thông tin đơn hàng</h2>
+              <p style="margin: 5px 0; color: #666;"><strong>Mã đơn hàng:</strong> #${order._id.toString().slice(-6).toUpperCase()}</p>
+              <p style="margin: 5px 0; color: #666;"><strong>Ngày đặt:</strong> ${new Date(order.date).toLocaleString('vi-VN')}</p>
+              <p style="margin: 5px 0; color: #666;"><strong>Phương thức thanh toán:</strong> ${order.paymentMethod === 'COD' ? 'Thanh toán khi nhận hàng' : 'VNPay'}</p>
+              <p style="margin: 5px 0; color: #666;"><strong>Trạng thái:</strong> <span style="color: #ff6b35; font-weight: bold;">${order.status}</span></p>
+            </div>
+            
+            <div style="margin-bottom: 25px;">
+              <h3 style="color: #333; margin-bottom: 15px;">📦 Chi tiết sản phẩm</h3>
+              <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #eee;">
+                <thead>
+                  <tr style="background: #f8f9fa;">
+                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #eee;">Sản phẩm</th>
+                    <th style="padding: 12px; text-align: center; border-bottom: 2px solid #eee;">SL</th>
+                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #eee;">Đơn giá</th>
+                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #eee;">Thành tiền</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${itemsHTML}
+                </tbody>
+              </table>
+            </div>
+            
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                <span style="color: #666;">Tạm tính:</span>
+                <span style="color: #666;">${(order.amount + (order.coupon ? order.coupon.discountAmount : 0)).toLocaleString('vi-VN')}đ</span>
+              </div>
+              ${order.coupon ? `
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                  <span style="color: #666;">Giảm giá (${order.coupon.code}):</span>
+                  <span style="color: #28a745;">-${order.coupon.discountAmount.toLocaleString('vi-VN')}đ</span>
+                </div>
+              ` : ''}
+              <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 2px solid #ddd;">
+                <span style="font-size: 18px; font-weight: bold; color: #333;">Tổng cộng:</span>
+                <span style="font-size: 18px; font-weight: bold; color: #ff6b35;">${order.amount.toLocaleString('vi-VN')}đ</span>
+              </div>
+            </div>
+            
+            <div style="background: #e8f5e8; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
+              <h3 style="color: #2d5a2d; margin: 0 0 15px 0;">🚚 Địa chỉ giao hàng</h3>
+              <p style="margin: 5px 0; color: #666;"><strong>Họ tên:</strong> ${order.address.firstName} ${order.address.lastName}</p>
+              <p style="margin: 5px 0; color: #666;"><strong>Số điện thoại:</strong> ${order.address.phone}</p>
+              <p style="margin: 5px 0; color: #666;"><strong>Địa chỉ:</strong> ${order.address.street}, ${order.address.city}, ${order.address.state}, ${order.address.country}</p>
+              ${order.address.zipcode ? `<p style="margin: 5px 0; color: #666;"><strong>Mã bưu điện:</strong> ${order.address.zipcode}</p>` : ''}
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${process.env.CLIENT_URL}/my-orders" 
+                 style="background: #ff6b35; color: white; padding: 12px 30px; text-decoration: none; border-radius: 25px; display: inline-block; font-weight: bold;">
+                Theo dõi đơn hàng
+              </a>
+            </div>
+            
+            <div style="background: #fff3cd; padding: 15px; border-radius: 8px; border-left: 4px solid #ffc107;">
+              <p style="margin: 0; color: #856404; font-size: 14px;">
+                <strong>📞 Hỗ trợ khách hàng:</strong> Nếu bạn có bất kỳ câu hỏi nào về đơn hàng, vui lòng liên hệ với chúng tôi qua email hoặc hotline.
+              </p>
+            </div>
+          </div>
+          
+          <div style="padding: 20px; background: #333; color: white; text-align: center; font-size: 12px;">
+            <p style="margin: 0;">© 2024 Electro. Tất cả quyền được bảo lưu.</p>
+            <p style="margin: 5px 0 0 0;">Email này được gửi tự động, vui lòng không trả lời.</p>
+          </div>
+        </div>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log('Email xác nhận đơn hàng đã gửi đến:', userEmail);
+  } catch (error) {
+    console.error('Lỗi gửi email xác nhận đơn hàng:', error);
+  }
+};
+
+// Gửi email hoàn tất đơn hàng
+const sendOrderCompletedEmail = async (userEmail, order, orderItems) => {
+  try {
+    const transporter = createTransporter();
+    
+    // Tạo HTML cho danh sách sản phẩm
+    const itemsHTML = orderItems.map(item => {
+      const itemPrice = item.variant ? item.variant.offerPrice : item.product.offerPrice;
+      const itemTotal = itemPrice * item.quantity;
+      
+      return `
+        <tr style="border-bottom: 1px solid #eee;">
+          <td style="padding: 10px; text-align: left;">
+            <strong>${item.product.name}</strong>
+            ${item.variant ? `<br><small style="color: #666;">Phiên bản: ${item.variant.attributes ? Object.values(JSON.parse(item.variant.attributes)).join(', ') : 'N/A'}</small>` : ''}
+          </td>
+          <td style="padding: 10px; text-align: center;">${item.quantity}</td>
+          <td style="padding: 10px; text-align: right;">${itemPrice.toLocaleString('vi-VN')}đ</td>
+          <td style="padding: 10px; text-align: right;"><strong>${itemTotal.toLocaleString('vi-VN')}đ</strong></td>
+        </tr>
+      `;
+    }).join('');
+    
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: userEmail,
+      subject: `Đơn hàng #${order._id.toString().slice(-8).toUpperCase()} đã được giao thành công! - Electro`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9;">
+          <div style="background: linear-gradient(135deg, #28a745, #20c997); padding: 30px; text-align: center; color: white;">
+            <h1 style="margin: 0; font-size: 28px;">🎉 Đơn hàng đã được giao thành công!</h1>
+            <p style="margin: 10px 0 0 0; font-size: 16px;">Cảm ơn bạn đã tin tưởng và mua sắm tại Electro</p>
+          </div>
+          
+          <div style="padding: 30px; background: white;">
+            <div style="background: #d4edda; padding: 20px; border-radius: 8px; margin-bottom: 25px; border-left: 4px solid #28a745;">
+              <h2 style="color: #155724; margin: 0 0 15px 0; font-size: 20px;">✅ Giao hàng thành công</h2>
+              <p style="margin: 5px 0; color: #155724;"><strong>Mã đơn hàng:</strong> #${order._id.toString().slice(-8).toUpperCase()}</p>
+              <p style="margin: 5px 0; color: #155724;"><strong>Ngày giao:</strong> ${new Date().toLocaleString('vi-VN')}</p>
+              <p style="margin: 5px 0; color: #155724;"><strong>Trạng thái:</strong> <span style="font-weight: bold;">Đã giao hàng</span></p>
+            </div>
+            
+            <div style="margin-bottom: 25px;">
+              <h3 style="color: #333; margin-bottom: 15px;">📦 Chi tiết sản phẩm đã giao</h3>
+              <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #eee;">
+                <thead>
+                  <tr style="background: #f8f9fa;">
+                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #eee;">Sản phẩm</th>
+                    <th style="padding: 12px; text-align: center; border-bottom: 2px solid #eee;">SL</th>
+                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #eee;">Đơn giá</th>
+                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #eee;">Thành tiền</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${itemsHTML}
+                </tbody>
+              </table>
+            </div>
+            
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
+              <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 2px solid #ddd;">
+                <span style="font-size: 18px; font-weight: bold; color: #333;">Tổng giá trị đơn hàng:</span>
+                <span style="font-size: 18px; font-weight: bold; color: #28a745;">${order.amount.toLocaleString('vi-VN')}đ</span>
+              </div>
+            </div>
+            
+            <div style="background: #e7f3ff; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
+              <h3 style="color: #0066cc; margin: 0 0 15px 0;">⭐ Đánh giá sản phẩm</h3>
+              <p style="margin: 0; color: #0066cc;">Hãy chia sẻ trải nghiệm của bạn về sản phẩm để giúp khách hàng khác có thêm thông tin tham khảo!</p>
+              <div style="text-align: center; margin-top: 15px;">
+                <a href="${process.env.CLIENT_URL}/my-orders" 
+                   style="background: #0066cc; color: white; padding: 10px 25px; text-decoration: none; border-radius: 20px; display: inline-block; font-weight: bold;">
+                  Đánh giá ngay
+                </a>
+              </div>
+            </div>
+            
+            <div style="background: #fff3cd; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
+              <h3 style="color: #856404; margin: 0 0 15px 0;">🎁 Ưu đãi đặc biệt</h3>
+              <p style="margin: 0; color: #856404;">Cảm ơn bạn đã mua sắm! Hãy theo dõi email để nhận những ưu đãi hấp dẫn trong tương lai.</p>
+              <div style="text-align: center; margin-top: 15px;">
+                <a href="${process.env.CLIENT_URL}" 
+                   style="background: #ffc107; color: #212529; padding: 10px 25px; text-decoration: none; border-radius: 20px; display: inline-block; font-weight: bold;">
+                  Tiếp tục mua sắm
+                </a>
+              </div>
+            </div>
+            
+            <div style="background: #f8d7da; padding: 15px; border-radius: 8px; border-left: 4px solid #dc3545;">
+              <p style="margin: 0; color: #721c24; font-size: 14px;">
+                <strong>📞 Hỗ trợ sau bán hàng:</strong> Nếu bạn gặp bất kỳ vấn đề nào với sản phẩm, vui lòng liên hệ với chúng tôi trong vòng 7 ngày để được hỗ trợ đổi trả.
+              </p>
+            </div>
+          </div>
+          
+          <div style="padding: 20px; background: #333; color: white; text-align: center; font-size: 12px;">
+            <p style="margin: 0;">© 2024 Electro. Tất cả quyền được bảo lưu.</p>
+            <p style="margin: 5px 0 0 0;">Email này được gửi tự động, vui lòng không trả lời.</p>
+          </div>
+        </div>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log('Email hoàn tất đơn hàng đã gửi đến:', userEmail);
+  } catch (error) {
+    console.error('Lỗi gửi email hoàn tất đơn hàng:', error);
+  }
+};
 
 export const createOrder = async (req, res) => {
   try {
@@ -152,6 +388,20 @@ export const createOrder = async (req, res) => {
     const user = await User.findById(req.user.id);
     user.cartItems = {};
     await user.save();
+
+    // Gửi email xác nhận đơn hàng
+    try {
+      // Populate order với thông tin chi tiết để gửi email
+      const populatedOrder = await Order.findById(order._id)
+        .populate('address')
+        .populate('items.product')
+        .populate('items.variant');
+      
+      await sendOrderConfirmationEmail(user.email, populatedOrder, populatedOrder.items);
+    } catch (emailError) {
+      console.error('Lỗi gửi email xác nhận đơn hàng:', emailError);
+      // Không throw error để không ảnh hưởng đến việc tạo đơn hàng
+    }
 
     res.json({ 
       success: true, 
@@ -361,6 +611,25 @@ export const updateOrderStatus = async (req, res) => {
 
     order.status = status;
     await order.save();
+
+    // Gửi email hoàn tất đơn hàng khi status là DELIVERED
+    if (status === OrderStatus.DELIVERED) {
+      try {
+        // Lấy thông tin user và populate order
+        const user = await User.findById(order.userId);
+        const populatedOrder = await Order.findById(order._id)
+          .populate('address')
+          .populate('items.product')
+          .populate('items.variant');
+        
+        if (user && user.email) {
+          await sendOrderCompletedEmail(user.email, populatedOrder, populatedOrder.items);
+        }
+      } catch (emailError) {
+        console.error('Lỗi gửi email hoàn tất đơn hàng:', emailError);
+        // Không throw error để không ảnh hưởng đến việc cập nhật status
+      }
+    }
 
     // Nếu đơn hàng được giao thành công, cập nhật rank của user
     if (status === OrderStatus.DELIVERED && order.paymentStatus === PaymentStatus.PAID) {
