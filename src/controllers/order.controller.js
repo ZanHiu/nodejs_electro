@@ -179,20 +179,20 @@ export const getOrders = async (req, res) => {
         if (item.variant) {
           // Lấy variant với đầy đủ thông tin EAV
           const variant = await ProductVariant.findById(item.variant)
-            .populate('attributeId')
+            .populate('attributeIds')
             .populate('imageId');
           
           if (variant) {
             const variantObj = variant.toObject();
             
-            // Parse attributes từ JSON string
+            // Xử lý attributes từ mảng attributeIds
             let attributes = {};
-            if (variantObj.attributeId && variantObj.attributeId.value) {
-              try {
-                attributes = JSON.parse(variantObj.attributeId.value);
-              } catch (e) {
-                console.error('Error parsing attributes:', e);
-              }
+            if (variantObj.attributeIds && variantObj.attributeIds.length > 0) {
+              variantObj.attributeIds.forEach(attr => {
+                if (attr && attr.name && attr.value) {
+                  attributes[attr.name] = attr.value;
+                }
+              });
             }
             
             // Lấy images và colorName từ imageId (ProductImage)

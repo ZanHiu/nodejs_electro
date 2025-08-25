@@ -1,7 +1,6 @@
 import { v2 as cloudinary } from 'cloudinary';
 import Product from '../models/Product.js';
 import ProductVariant from '../models/ProductVariant.js';
-import ProductAttribute from '../models/ProductAttribute.js';
 import ProductImage from '../models/ProductImage.js';
 
 cloudinary.config({
@@ -9,6 +8,18 @@ cloudinary.config({
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
+
+const processVariantAttributes = (variantObj) => {
+  let attributes = {};
+  if (variantObj.attributeIds && variantObj.attributeIds.length > 0) {
+    variantObj.attributeIds.forEach(attr => {
+      if (attr && attr.name && attr.value) {
+        attributes[attr.name] = attr.value;
+      }
+    });
+  }
+  return attributes;
+};
 
 export const addProduct = async (req, res) => {
   try {
@@ -91,14 +102,13 @@ export const addProduct = async (req, res) => {
       colorImageMap[color.name] = imageUrls;
     }
 
-    // Tạo ProductImage cho các màu sắc
+    // Tạo ProductImage cho các màu sắc (BỎ productId)
     const createdImages = [];
     for (let colorIdx = 0; colorIdx < productData.colors.length; colorIdx++) {
       const color = productData.colors[colorIdx];
       
-      // Tạo ProductImage với mảng ảnh từ colorImageMap
+      // Tạo ProductImage KHÔNG CẦN productId
       const productImage = await ProductImage.create({
-        productId: newProduct._id,
         name: color.name,
         value: colorImageMap[color.name] // Mảng các URL ảnh
       });
@@ -106,51 +116,39 @@ export const addProduct = async (req, res) => {
       createdImages.push(productImage);
     }
 
-    // Tạo ProductAttribute duy nhất cho mỗi tổ hợp thuộc tính
-    const createdAttributes = new Map(); // key: JSON.stringify(attributes), value: attributeId
+    // Tạo ProductAttribute riêng lẻ cho từng thuộc tính
+    const createdAttributeIds = [];
     
     // Tạo ProductVariant cho từng biến thể x từng màu
     const createdVariants = [];
     for (const variant of productData.variants) {
-      // Tạo ProductAttribute cho thuộc tính riêng của variant này (nếu có)
-      let variantAttributeId = null;
-      if (variant.attributeIndices && variant.attributeIndices.length > 0) {
-        const variantSpecificAttrs = {};
-        variant.attributeIndices.forEach(idx => {
-          const attr = productData.attributes[idx];
-          if (attr && attr.name && attr.value) {
-            variantSpecificAttrs[attr.name] = attr.value;
-          }
-        });
-        
-        if (Object.keys(variantSpecificAttrs).length > 0) {
-          const attrKey = JSON.stringify(variantSpecificAttrs);
-          
-          // Kiểm tra xem đã tạo ProductAttribute cho tổ hợp này chưa
-          if (!createdAttributes.has(attrKey)) {
-            const variantAttribute = await ProductAttribute.create({
-              productId: newProduct._id,
-              name: 'variant_specific',
-              value: attrKey
-            });
-            createdAttributes.set(attrKey, variantAttribute._id);
-          }
-          
-          variantAttributeId = createdAttributes.get(attrKey);
-        }
+      // Sử dụng selectedAttributeIds thay vì attributeIndices
+      let variantAttributeIds = [];
+      if (variant.selectedAttributeIds && variant.selectedAttributeIds.length > 0) {
+        // Sử dụng trực tiếp selectedAttributeIds từ frontend
+        variantAttributeIds = variant.selectedAttributeIds;
       }
       
-      // Tạo ProductVariant cho từng màu với cùng thuộc tính
-      for (let colorIdx = 0; colorIdx < createdImages.length; colorIdx++) {
-        const productVariant = await ProductVariant.create({
-          productId: newProduct._id,
-          attributeId: variantAttributeId,
-          imageId: createdImages[colorIdx]._id,
-          price: Number(variant.price),
-          offerPrice: Number(variant.offerPrice) || 0
-        });
+      // Chỉ tạo ProductVariant cho màu được chọn
+      for (const variant of productData.variants) {
+        let variantAttributeIds = [];
+        if (variant.selectedAttributeIds && variant.selectedAttributeIds.length > 0) {
+          variantAttributeIds = variant.selectedAttributeIds;
+        }
         
-        createdVariants.push(productVariant);
+        // Chỉ tạo variant cho màu được chọn
+        const colorIndex = variant.colorIndex || 0;
+        if (colorIndex < createdImages.length) {
+          const productVariant = await ProductVariant.create({
+            productId: newProduct._id,
+            attributeIds: variantAttributeIds,
+            imageId: createdImages[colorIndex]._id, // Chỉ màu được chọn
+            price: Number(variant.price),
+            offerPrice: Number(variant.offerPrice) || 0
+          });
+          
+          createdVariants.push(productVariant);
+        }
       }
     }
 
@@ -159,7 +157,8 @@ export const addProduct = async (req, res) => {
       message: "Thêm sản phẩm thành công", 
       product: newProduct,
       images: createdImages,
-      variants: createdVariants
+      variants: createdVariants,
+      attributes: createdAttributeIds
     });
   } catch (error) {
     console.error('Error in addProduct:', error);
@@ -237,20 +236,15 @@ export const editProduct = async (req, res) => {
       { new: true }
     );
 
-    // Lấy các ProductImage, ProductAttribute và ProductVariant hiện tại để cố gắng giữ nguyên ID
-    const existingImages = await ProductImage.find({ productId: id });
-    const existingAttributes = await ProductAttribute.find({ productId: id });
-    const existingVariants = await ProductVariant.find({ productId: id }).populate('imageId').populate('attributeId');
+    // Lấy các ProductImage hiện tại của sản phẩm này thông qua ProductVariant
+    const existingVariants = await ProductVariant.find({ productId: id }).populate('imageId');
+    const existingImageIds = existingVariants.map(v => v.imageId?._id).filter(Boolean);
+    const existingImages = await ProductImage.find({ _id: { $in: existingImageIds } });
     
     // Tạo map để tra cứu nhanh
     const existingImageMap = new Map();
     existingImages.forEach(img => {
       existingImageMap.set(img.name, img);
-    });
-    
-    const existingAttributeMap = new Map();
-    existingAttributes.forEach(attr => {
-      existingAttributeMap.set(attr.value, attr);
     });
 
     // Upload ảnh cho từng màu (chỉ upload file mới)
@@ -324,7 +318,6 @@ export const editProduct = async (req, res) => {
       } else {
         // Tạo ProductImage mới
         const productImage = await ProductImage.create({
-          productId: id,
           name: color.name,
           value: colorImageMap[color.name]
         });
@@ -332,122 +325,70 @@ export const editProduct = async (req, res) => {
       }
     }
 
-    // Xóa các ProductImage không còn sử dụng
+    // Xóa các ProductImage không còn sử dụng (chỉ của sản phẩm này)
     const currentColorNames = productData.colors.map(c => c.name);
-    await ProductImage.deleteMany({ 
-      productId: id, 
-      name: { $nin: currentColorNames } 
-    });
+    const imagesToDelete = existingImages.filter(img => !currentColorNames.includes(img.name));
+    if (imagesToDelete.length > 0) {
+      await ProductImage.deleteMany({ _id: { $in: imagesToDelete.map(img => img._id) } });
+    }
 
-    // Tạo ProductAttribute duy nhất cho mỗi tổ hợp thuộc tính
-    const createdAttributes = new Map(); // key: JSON.stringify(attributes), value: attributeId
-    
-    // Tạo map để tra cứu ProductVariant hiện tại
-    const existingVariantMap = new Map();
-    existingVariants.forEach(variant => {
-      const imageId = variant.imageId?._id || variant.imageId;
-      const attributeId = variant.attributeId?._id || variant.attributeId;
-      const key = `${imageId}_${attributeId || 'null'}`;
-      existingVariantMap.set(key, variant);
-    });
+    // Lấy các ProductVariant hiện có của sản phẩm này
+    const existingVariantsForUpdate = await ProductVariant.find({ productId: id }).sort({ createdAt: 1 });
 
-    // Tạo ProductVariant cho từng biến thể x từng màu
-    const createdVariants = [];
-    const usedVariantIds = new Set();
-    
-    for (const variant of productData.variants) {
-      // Tạo ProductAttribute cho thuộc tính riêng của variant này (nếu có)
-      let variantAttributeId = null;
-      if (variant.attributeIndices && variant.attributeIndices.length > 0) {
-        const variantSpecificAttrs = {};
-        variant.attributeIndices.forEach(idx => {
-          const attr = productData.attributes[idx];
-          if (attr && attr.name && attr.value) {
-            variantSpecificAttrs[attr.name] = attr.value;
-          }
-        });
-        
-        if (Object.keys(variantSpecificAttrs).length > 0) {
-          const attrKey = JSON.stringify(variantSpecificAttrs);
-          
-          // Kiểm tra xem đã tạo ProductAttribute cho tổ hợp này chưa
-          if (!createdAttributes.has(attrKey)) {
-            // Kiểm tra xem đã có ProductAttribute này trong DB chưa
-            const existingAttribute = existingAttributeMap.get(attrKey);
-            
-            if (existingAttribute) {
-              // Sử dụng lại ProductAttribute hiện tại
-              createdAttributes.set(attrKey, existingAttribute._id);
-            } else {
-              // Tạo ProductAttribute mới
-              const variantAttribute = await ProductAttribute.create({
-                productId: id,
-                name: 'variant_specific',
-                value: attrKey
-              });
-              createdAttributes.set(attrKey, variantAttribute._id);
-            }
-          }
-          
-          variantAttributeId = createdAttributes.get(attrKey);
-        }
+    // Cập nhật hoặc tạo mới ProductVariant (giữ nguyên ID khi có thể)
+    const finalVariants = [];
+    for (let i = 0; i < productData.variants.length; i++) {
+      const variant = productData.variants[i];
+      let variantAttributeIds = [];
+      if (variant.selectedAttributeIds && variant.selectedAttributeIds.length > 0) {
+        variantAttributeIds = variant.selectedAttributeIds;
       }
       
-      // Tạo ProductVariant cho từng màu với cùng thuộc tính
-      for (let colorIdx = 0; colorIdx < createdImages.length; colorIdx++) {
-        const imageId = createdImages[colorIdx]._id;
-        const variantKey = `${imageId}_${variantAttributeId || 'null'}`;
+      const colorIndex = variant.colorIndex || 0;
+      if (colorIndex < createdImages.length) {
+        let productVariant;
         
-        // Kiểm tra xem đã có ProductVariant này chưa
-        const existingVariant = existingVariantMap.get(variantKey);
-        
-        if (existingVariant) {
-          // Cập nhật ProductVariant hiện tại
-          const updatedVariant = await ProductVariant.findByIdAndUpdate(
-            existingVariant._id,
+        if (existingVariantsForUpdate[i]) {
+          // Cập nhật ProductVariant hiện có (giữ nguyên ID)
+          productVariant = await ProductVariant.findByIdAndUpdate(
+            existingVariantsForUpdate[i]._id,
             {
+              attributeIds: variantAttributeIds,
+              imageId: createdImages[colorIndex]._id,
               price: Number(variant.price),
               offerPrice: Number(variant.offerPrice) || 0
             },
             { new: true }
           );
-          createdVariants.push(updatedVariant);
-          usedVariantIds.add(existingVariant._id.toString());
         } else {
-          // Tạo ProductVariant mới
-          const productVariant = await ProductVariant.create({
+          // Tạo mới nếu không có variant tương ứng
+          productVariant = await ProductVariant.create({
             productId: id,
-            attributeId: variantAttributeId,
-            imageId: imageId,
+            attributeIds: variantAttributeIds,
+            imageId: createdImages[colorIndex]._id,
             price: Number(variant.price),
             offerPrice: Number(variant.offerPrice) || 0
           });
-          createdVariants.push(productVariant);
-          usedVariantIds.add(productVariant._id.toString());
         }
+        
+        finalVariants.push(productVariant);
       }
     }
 
-    // Xóa các ProductVariant không còn sử dụng
-    const allExistingVariantIds = existingVariants.map(v => v._id.toString());
-    const variantIdsToDelete = allExistingVariantIds.filter(id => !usedVariantIds.has(id));
-    if (variantIdsToDelete.length > 0) {
-      await ProductVariant.deleteMany({ _id: { $in: variantIdsToDelete } });
+    // Xóa các ProductVariant thừa (nếu số variant mới ít hơn số variant cũ)
+    if (existingVariantsForUpdate.length > productData.variants.length) {
+      const variantsToDelete = existingVariantsForUpdate.slice(productData.variants.length);
+      await ProductVariant.deleteMany({ 
+        _id: { $in: variantsToDelete.map(v => v._id) } 
+      });
     }
-
-    // Xóa các ProductAttribute không còn sử dụng
-    const usedAttributeIds = Array.from(createdAttributes.values());
-    await ProductAttribute.deleteMany({ 
-      productId: id, 
-      _id: { $nin: usedAttributeIds } 
-    });
 
     res.json({ 
       success: true, 
       message: "Cập nhật sản phẩm thành công", 
       product: updatedProduct,
       images: createdImages,
-      variants: createdVariants
+      variants: finalVariants
     });
   } catch (error) {
     console.error('Error in editProduct:', error);
@@ -494,22 +435,15 @@ export const getProducts = async (req, res) => {
     // Xử lý variants với đầy đủ thông tin EAV cho từng product
     const productsWithVariants = await Promise.all(products.map(async (product) => {
       const variants = await ProductVariant.find({ productId: product._id })
-        .populate('attributeId')
+        .populate('attributeIds')
         .populate('imageId');
       
       // Xử lý variants để có cấu trúc dữ liệu rõ ràng
       const processedVariants = variants.map(variant => {
         const variantObj = variant.toObject();
         
-        // Parse attributes từ JSON string
-        let attributes = {};
-        if (variantObj.attributeId && variantObj.attributeId.value) {
-          try {
-            attributes = JSON.parse(variantObj.attributeId.value);
-          } catch (e) {
-            console.error('Error parsing attributes:', e);
-          }
-        }
+        // Xử lý attributes từ mảng attributeIds
+        const attributes = processVariantAttributes(variantObj);
         
         // Lấy images và colorName từ imageId (ProductImage)
         let images = [];
@@ -574,22 +508,15 @@ export const getSellerProducts = async (req, res) => {
     // Lấy variants với đầy đủ thông tin EAV cho từng product
     const productsWithVariants = await Promise.all(products.map(async (product) => {
       const variants = await ProductVariant.find({ productId: product._id })
-        .populate('attributeId')
+        .populate('attributeIds')
         .populate('imageId');
       
       // Xử lý variants để có cấu trúc dữ liệu rõ ràng
       const processedVariants = variants.map(variant => {
         const variantObj = variant.toObject();
         
-        // Parse attributes từ JSON string
-        let attributes = {};
-        if (variantObj.attributeId && variantObj.attributeId.value) {
-          try {
-            attributes = JSON.parse(variantObj.attributeId.value);
-          } catch (e) {
-            console.error('Error parsing attributes:', e);
-          }
-        }
+        // Xử lý attributes từ mảng attributeIds
+        const attributes = processVariantAttributes(variantObj);
         
         // Lấy images và colorName từ imageId (ProductImage)
         let images = [];
@@ -646,22 +573,15 @@ export const getProductsByCategory = async (req, res) => {
     // Xử lý variants với đầy đủ thông tin EAV cho từng product
     const productsWithVariants = await Promise.all(products.map(async (product) => {
       const variants = await ProductVariant.find({ productId: product._id })
-        .populate('attributeId')
+        .populate('attributeIds')
         .populate('imageId');
       
       // Xử lý variants để có cấu trúc dữ liệu rõ ràng
       const processedVariants = variants.map(variant => {
         const variantObj = variant.toObject();
         
-        // Parse attributes từ JSON string
-        let attributes = {};
-        if (variantObj.attributeId && variantObj.attributeId.value) {
-          try {
-            attributes = JSON.parse(variantObj.attributeId.value);
-          } catch (e) {
-            console.error('Error parsing attributes:', e);
-          }
-        }
+        // Xử lý attributes từ mảng attributeIds
+        const attributes = processVariantAttributes(variantObj);
         
         // Lấy images và colorName từ imageId (ProductImage)
         let images = [];
@@ -718,22 +638,15 @@ export const getProductsByBrand = async (req, res) => {
     // Xử lý variants với đầy đủ thông tin EAV cho từng product
     const productsWithVariants = await Promise.all(products.map(async (product) => {
       const variants = await ProductVariant.find({ productId: product._id })
-        .populate('attributeId')
+        .populate('attributeIds')
         .populate('imageId');
       
       // Xử lý variants để có cấu trúc dữ liệu rõ ràng
       const processedVariants = variants.map(variant => {
         const variantObj = variant.toObject();
         
-        // Parse attributes từ JSON string
-        let attributes = {};
-        if (variantObj.attributeId && variantObj.attributeId.value) {
-          try {
-            attributes = JSON.parse(variantObj.attributeId.value);
-          } catch (e) {
-            console.error('Error parsing attributes:', e);
-          }
-        }
+        // Xử lý attributes từ mảng attributeIds
+        const attributes = processVariantAttributes(variantObj);
         
         // Lấy images và colorName từ imageId (ProductImage)
         let images = [];
@@ -806,22 +719,15 @@ export const getFilteredProducts = async (req, res) => {
     // Xử lý variants với đầy đủ thông tin EAV cho từng product
     const productsWithVariants = await Promise.all(products.map(async (product) => {
       const variants = await ProductVariant.find({ productId: product._id })
-        .populate('attributeId')
+        .populate('attributeIds')
         .populate('imageId');
       
       // Xử lý variants để có cấu trúc dữ liệu rõ ràng
       const processedVariants = variants.map(variant => {
         const variantObj = variant.toObject();
         
-        // Parse attributes từ JSON string
-        let attributes = {};
-        if (variantObj.attributeId && variantObj.attributeId.value) {
-          try {
-            attributes = JSON.parse(variantObj.attributeId.value);
-          } catch (e) {
-            console.error('Error parsing attributes:', e);
-          }
-        }
+        // Xử lý attributes từ mảng attributeIds
+        const attributes = processVariantAttributes(variantObj);
         
         // Lấy images và colorName từ imageId (ProductImage)
         let images = [];
@@ -918,22 +824,15 @@ export const getProductDetail = async (req, res) => {
 
     // Lấy danh sách variant với đầy đủ thông tin EAV
     const variants = await ProductVariant.find({ productId: id })
-      .populate('attributeId')
+      .populate('attributeIds')
       .populate('imageId');
     
     // Xử lý variants để có cấu trúc dữ liệu rõ ràng
     const processedVariants = variants.map(variant => {
       const variantObj = variant.toObject();
       
-      // Parse attributes từ JSON string
-      let attributes = {};
-      if (variantObj.attributeId && variantObj.attributeId.value) {
-        try {
-          attributes = JSON.parse(variantObj.attributeId.value);
-        } catch (e) {
-          console.error('Error parsing attributes:', e);
-        }
-      }
+      // Xử lý attributes từ mảng attributeIds
+      const attributes = processVariantAttributes(variantObj);
       
       // Lấy images và colorName từ imageId (ProductImage)
       let images = [];
@@ -952,6 +851,7 @@ export const getProductDetail = async (req, res) => {
         price: variantObj.price,
         offerPrice: variantObj.offerPrice,
         attributes,
+        attributeIds: variantObj.attributeIds, // SỬA: Thêm variantObj. trước attributeIds
         images,
         colorName,
         createdAt: variantObj.createdAt

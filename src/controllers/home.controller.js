@@ -9,7 +9,7 @@ export const getHomeProducts = async (req, res) => {
     const processProductVariants = async (products) => {
       return await Promise.all(products.map(async (product) => {
         const variants = await ProductVariant.find({ productId: product._id })
-          .populate('attributeId')
+          .populate('attributeIds')
           .populate('imageId');
         
         // Xử lý variants để có cấu trúc dữ liệu rõ ràng
