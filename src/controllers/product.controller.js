@@ -1,6 +1,8 @@
 import { v2 as cloudinary } from 'cloudinary';
 import Product from '../models/Product.js';
 import ProductVariant from '../models/ProductVariant.js';
+import ProductAttribute from '../models/ProductAttribute.js';
+import ProductImage from '../models/ProductImage.js';
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -11,39 +13,57 @@ cloudinary.config({
 export const addProduct = async (req, res) => {
   try {
     const { name, description, category, brand, views } = req.body;
-    let variants = req.body.variants;
-    let colors = req.body.colors;
+    let productData = req.body.productData;
     const files = req.files;
 
-    // Parse lại variants và colors nếu là string
-    if (typeof variants === 'string') {
+    // Parse productData từ frontend
+    if (typeof productData === 'string') {
       try {
-        variants = JSON.parse(variants);
+        productData = JSON.parse(productData);
       } catch (e) {
-        variants = [];
-      }
-    }
-    if (typeof colors === 'string') {
-      try {
-        colors = JSON.parse(colors);
-      } catch (e) {
-        colors = [];
+        return res.status(400).json({ success: false, message: "Dữ liệu sản phẩm không hợp lệ" });
       }
     }
 
-    let specs = req.body.specs;
-    if (typeof specs === 'string') {
-      try {
-        specs = JSON.parse(specs);
-      } catch (e) {
-        specs = {};
-      }
+    // Kiểm tra duplicate product name
+    const existingProduct = await Product.findOne({ name: name.trim() });
+    if (existingProduct) {
+      return res.status(400).json({ success: false, message: "Tên sản phẩm đã tồn tại" });
     }
+
+    if (!productData || !productData.variants || productData.variants.length === 0) {
+      return res.status(400).json({ success: false, message: "Cần ít nhất 1 biến thể cho sản phẩm" });
+    }
+
+    if (!productData.colors || productData.colors.length === 0) {
+      return res.status(400).json({ success: false, message: "Cần ít nhất 1 màu sắc cho sản phẩm" });
+    }
+
+    // Chuẩn bị thuộc tính chung
+    const commonAttributes = new Map();
+    if (productData.commonAttributes && productData.commonAttributes.length > 0) {
+      productData.commonAttributes.forEach(attr => {
+        if (attr.name && attr.value) {
+          commonAttributes.set(attr.name, attr.value);
+        }
+      });
+    }
+
+    // Tạo sản phẩm chính với thuộc tính chung
+    const newProduct = await Product.create({
+      name: name.trim(),
+      description,
+      category,
+      brand,
+      views: Number(views) || 0,
+      date: Date.now(),
+      commonAttributes
+    });
 
     // Upload ảnh cho từng màu
     let colorImageMap = {}; // { colorName: [url1, url2, ...] }
-    for (let cIdx = 0; cIdx < colors.length; cIdx++) {
-      const color = colors[cIdx];
+    for (let cIdx = 0; cIdx < productData.colors.length; cIdx++) {
+      const color = productData.colors[cIdx];
       const colorImages = files
         .filter(f => f.fieldname.startsWith(`colorImages_${cIdx}_`))
         .sort((a, b) => {
@@ -71,44 +91,78 @@ export const addProduct = async (req, res) => {
       colorImageMap[color.name] = imageUrls;
     }
 
-    // Tạo sản phẩm chính
-    const newProduct = await Product.create({
-      name,
-      description,
-      category,
-      brand,
-      views: Number(views),
-      date: Date.now(),
-      specs: specs || {},
-    });
+    // Tạo ProductImage cho các màu sắc
+    const createdImages = [];
+    for (let colorIdx = 0; colorIdx < productData.colors.length; colorIdx++) {
+      const color = productData.colors[colorIdx];
+      
+      // Tạo ProductImage với mảng ảnh từ colorImageMap
+      const productImage = await ProductImage.create({
+        productId: newProduct._id,
+        name: color.name,
+        value: colorImageMap[color.name] // Mảng các URL ảnh
+      });
+      
+      createdImages.push(productImage);
+    }
 
-    // Tạo các variant, lấy ảnh từ màu tương ứng
-    let createdVariants = [];
-    if (Array.isArray(variants) && variants.length > 0) {
-      for (let vIdx = 0; vIdx < variants.length; vIdx++) {
-        const variant = variants[vIdx];
-        const colorName = variant.color;
-        const imageUrls = colorImageMap[colorName] || [];
-        if (!imageUrls.length) {
-          return res.status(400).json({ success: false, message: `Màu '${colorName}' của biến thể thứ ${vIdx + 1} chưa có ảnh!` });
-        }
-        // Gom các trường attributes động
-        const attributes = { color: colorName };
-        if (variant.ram) attributes.ram = variant.ram;
-        if (variant.rom) attributes.rom = variant.rom;
-        const variantDoc = await ProductVariant.create({
-          productId: newProduct._id,
-          attributes,
-          images: imageUrls,
-          price: Number(variant.price),
-          offerPrice: Number(variant.offerPrice),
+    // Tạo ProductAttribute duy nhất cho mỗi tổ hợp thuộc tính
+    const createdAttributes = new Map(); // key: JSON.stringify(attributes), value: attributeId
+    
+    // Tạo ProductVariant cho từng biến thể x từng màu
+    const createdVariants = [];
+    for (const variant of productData.variants) {
+      // Tạo ProductAttribute cho thuộc tính riêng của variant này (nếu có)
+      let variantAttributeId = null;
+      if (variant.attributeIndices && variant.attributeIndices.length > 0) {
+        const variantSpecificAttrs = {};
+        variant.attributeIndices.forEach(idx => {
+          const attr = productData.attributes[idx];
+          if (attr && attr.name && attr.value) {
+            variantSpecificAttrs[attr.name] = attr.value;
+          }
         });
-        createdVariants.push(variantDoc);
+        
+        if (Object.keys(variantSpecificAttrs).length > 0) {
+          const attrKey = JSON.stringify(variantSpecificAttrs);
+          
+          // Kiểm tra xem đã tạo ProductAttribute cho tổ hợp này chưa
+          if (!createdAttributes.has(attrKey)) {
+            const variantAttribute = await ProductAttribute.create({
+              productId: newProduct._id,
+              name: 'variant_specific',
+              value: attrKey
+            });
+            createdAttributes.set(attrKey, variantAttribute._id);
+          }
+          
+          variantAttributeId = createdAttributes.get(attrKey);
+        }
+      }
+      
+      // Tạo ProductVariant cho từng màu với cùng thuộc tính
+      for (let colorIdx = 0; colorIdx < createdImages.length; colorIdx++) {
+        const productVariant = await ProductVariant.create({
+          productId: newProduct._id,
+          attributeId: variantAttributeId,
+          imageId: createdImages[colorIdx]._id,
+          price: Number(variant.price),
+          offerPrice: Number(variant.offerPrice) || 0
+        });
+        
+        createdVariants.push(productVariant);
       }
     }
 
-    res.json({ success: true, message: "Thêm sản phẩm thành công", newProduct, variants: createdVariants });
+    res.json({ 
+      success: true, 
+      message: "Thêm sản phẩm thành công", 
+      product: newProduct,
+      images: createdImages,
+      variants: createdVariants
+    });
   } catch (error) {
+    console.error('Error in addProduct:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -116,7 +170,8 @@ export const addProduct = async (req, res) => {
 export const editProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, category, brand, views, specs, variants, colors } = req.body;
+    const { name, description, category, brand, views } = req.body;
+    let productData = req.body.productData;
     const files = req.files;
 
     // Nếu chỉ cập nhật trạng thái isActive
@@ -126,135 +181,276 @@ export const editProduct = async (req, res) => {
       return res.json({ success: true, message: 'Cập nhật trạng thái thành công', product: updated });
     }
 
-    // Parse lại variants, colors, specs nếu là string
-    let parsedVariants = variants;
-    let parsedColors = colors;
-    let parsedSpecs = specs;
-    
-    if (typeof variants === 'string') {
+    // Parse productData từ frontend
+    if (typeof productData === 'string') {
       try {
-        parsedVariants = JSON.parse(variants);
+        productData = JSON.parse(productData);
       } catch (e) {
-        parsedVariants = [];
-      }
-    }
-    if (typeof colors === 'string') {
-      try {
-        parsedColors = JSON.parse(colors);
-      } catch (e) {
-        parsedColors = [];
-      }
-    }
-    if (typeof specs === 'string') {
-      try {
-        parsedSpecs = JSON.parse(specs);
-      } catch (e) {
-        parsedSpecs = {};
+        return res.status(400).json({ success: false, message: "Dữ liệu sản phẩm không hợp lệ" });
       }
     }
 
-    // Find product và variants hiện tại
+    // Kiểm tra sản phẩm tồn tại
     const product = await Product.findById(id);
     if (!product) {
       return res.status(404).json({ success: false, message: "Không tìm thấy sản phẩm" });
     }
 
-    // Lấy variants hiện tại để có ảnh cũ
-    const existingVariants = await ProductVariant.find({ productId: id });
-    const existingColorImages = {};
-    existingVariants.forEach(variant => {
-      if (variant.attributes?.color) {
-        existingColorImages[variant.attributes.color] = variant.images || [];
-      }
+    // Kiểm tra duplicate product name (trừ chính nó)
+    const existingProduct = await Product.findOne({ 
+      name: name.trim(), 
+      _id: { $ne: id } 
     });
-
-    // Upload ảnh cho từng màu nếu có
-    let colorImageMap = {}; // { colorName: [url1, url2, ...] }
-    if (parsedColors && parsedColors.length > 0) {
-      for (let cIdx = 0; cIdx < parsedColors.length; cIdx++) {
-        const color = parsedColors[cIdx];
-        const colorImages = files
-          .filter(f => f.fieldname.startsWith(`colorImages_${cIdx}_`))
-          .sort((a, b) => {
-            const aIdx = parseInt(a.fieldname.split('_').pop());
-            const bIdx = parseInt(b.fieldname.split('_').pop());
-            return aIdx - bIdx;
-          });
-        
-        let imageUrls = [];
-        
-        // Giữ lại ảnh cũ nếu có
-        if (existingColorImages[color.name]) {
-          imageUrls = [...existingColorImages[color.name]];
-        }
-        
-        // Upload ảnh mới nếu có
-        if (colorImages.length > 0) {
-          for (const file of colorImages) {
-            const result = await new Promise((resolve, reject) => {
-              const stream = cloudinary.uploader.upload_stream(
-                { resource_type: "auto" },
-                (error, result) => {
-                  if (error) reject(error);
-                  else resolve(result);
-                }
-              );
-              stream.end(file.buffer);
-            });
-            imageUrls.push(result.secure_url);
-          }
-        }
-        
-        colorImageMap[color.name] = imageUrls;
-      }
+    if (existingProduct) {
+      return res.status(400).json({ success: false, message: "Tên sản phẩm đã tồn tại" });
     }
 
-    // Update product
+    if (!productData || !productData.variants || productData.variants.length === 0) {
+      return res.status(400).json({ success: false, message: "Cần ít nhất 1 biến thể cho sản phẩm" });
+    }
+
+    if (!productData.colors || productData.colors.length === 0) {
+      return res.status(400).json({ success: false, message: "Cần ít nhất 1 màu sắc cho sản phẩm" });
+    }
+
+    // Chuẩn bị thuộc tính chung
+    const commonAttributes = new Map();
+    if (productData.commonAttributes && productData.commonAttributes.length > 0) {
+      productData.commonAttributes.forEach(attr => {
+        if (attr.name && attr.value) {
+          commonAttributes.set(attr.name, attr.value);
+        }
+      });
+    }
+
+    // Cập nhật sản phẩm chính
     const updatedProduct = await Product.findByIdAndUpdate(
       id,
       {
-        name,
+        name: name.trim(),
         description,
         category,
         brand,
-        views: Number(views),
-        specs: parsedSpecs || {},
+        views: Number(views) || 0,
+        commonAttributes
       },
       { new: true }
     );
 
-    // Xóa tất cả variants cũ và tạo mới
-    if (parsedVariants && parsedVariants.length > 0) {
-      await ProductVariant.deleteMany({ productId: id });
+    // Lấy các ProductImage, ProductAttribute và ProductVariant hiện tại để cố gắng giữ nguyên ID
+    const existingImages = await ProductImage.find({ productId: id });
+    const existingAttributes = await ProductAttribute.find({ productId: id });
+    const existingVariants = await ProductVariant.find({ productId: id }).populate('imageId').populate('attributeId');
+    
+    // Tạo map để tra cứu nhanh
+    const existingImageMap = new Map();
+    existingImages.forEach(img => {
+      existingImageMap.set(img.name, img);
+    });
+    
+    const existingAttributeMap = new Map();
+    existingAttributes.forEach(attr => {
+      existingAttributeMap.set(attr.value, attr);
+    });
+
+    // Upload ảnh cho từng màu (chỉ upload file mới)
+    let colorImageMap = {}; // { colorName: [url1, url2, ...] }
+    for (let cIdx = 0; cIdx < productData.colors.length; cIdx++) {
+      const color = productData.colors[cIdx];
       
-      let createdVariants = [];
-      for (let vIdx = 0; vIdx < parsedVariants.length; vIdx++) {
-        const variant = parsedVariants[vIdx];
-        const colorName = variant.color;
-        const imageUrls = colorImageMap[colorName] || [];
-        
-        // Gom các trường attributes động
-        const attributes = { color: colorName };
-        if (variant.ram) attributes.ram = variant.ram;
-        if (variant.rom) attributes.rom = variant.rom;
-        
-        const variantDoc = await ProductVariant.create({
-          productId: id,
-          attributes,
-          images: imageUrls,
-          price: Number(variant.price),
-          offerPrice: Number(variant.offerPrice),
+      // Lấy ảnh mới từ files
+      const newColorImages = files
+        .filter(f => f.fieldname.startsWith(`colorImages_${cIdx}_`))
+        .sort((a, b) => {
+          const aIdx = parseInt(a.fieldname.split('_').pop());
+          const bIdx = parseInt(b.fieldname.split('_').pop());
+          return aIdx - bIdx;
         });
-        createdVariants.push(variantDoc);
+      
+      // Lấy ảnh cũ từ color.images (URL string)
+      const existingImages = color.images || [];
+      
+      let imageUrls = [];
+      
+      // Upload ảnh mới và giữ ảnh cũ
+      for (let imgIdx = 0; imgIdx < Math.max(newColorImages.length, existingImages.length); imgIdx++) {
+        const newFile = newColorImages.find(f => f.fieldname === `colorImages_${cIdx}_${imgIdx}`);
+        
+        if (newFile) {
+          // Upload ảnh mới
+          const result = await new Promise((resolve, reject) => {
+            const stream = cloudinary.uploader.upload_stream(
+              { resource_type: "auto" },
+              (error, result) => {
+                if (error) reject(error);
+                else resolve(result);
+              }
+            );
+            stream.end(newFile.buffer);
+          });
+          imageUrls.push(result.secure_url);
+        } else if (existingImages[imgIdx] && typeof existingImages[imgIdx] === 'string') {
+          // Giữ ảnh cũ
+          imageUrls.push(existingImages[imgIdx]);
+        }
+      }
+      
+      if (imageUrls.length === 0) {
+        return res.status(400).json({ success: false, message: `Màu "${color.name}" chưa có ảnh!` });
+      }
+      
+      colorImageMap[color.name] = imageUrls;
+    }
+
+    // Cập nhật hoặc tạo mới ProductImage cho các màu sắc
+    const createdImages = [];
+    for (let colorIdx = 0; colorIdx < productData.colors.length; colorIdx++) {
+      const color = productData.colors[colorIdx];
+      
+      // Kiểm tra xem đã có ProductImage cho màu này chưa
+      const existingImage = existingImageMap.get(color.name);
+      
+      if (existingImage) {
+        // Cập nhật ProductImage hiện tại
+        const updatedImage = await ProductImage.findByIdAndUpdate(
+          existingImage._id,
+          {
+            name: color.name,
+            value: colorImageMap[color.name]
+          },
+          { new: true }
+        );
+        createdImages.push(updatedImage);
+      } else {
+        // Tạo ProductImage mới
+        const productImage = await ProductImage.create({
+          productId: id,
+          name: color.name,
+          value: colorImageMap[color.name]
+        });
+        createdImages.push(productImage);
       }
     }
+
+    // Xóa các ProductImage không còn sử dụng
+    const currentColorNames = productData.colors.map(c => c.name);
+    await ProductImage.deleteMany({ 
+      productId: id, 
+      name: { $nin: currentColorNames } 
+    });
+
+    // Tạo ProductAttribute duy nhất cho mỗi tổ hợp thuộc tính
+    const createdAttributes = new Map(); // key: JSON.stringify(attributes), value: attributeId
+    
+    // Tạo map để tra cứu ProductVariant hiện tại
+    const existingVariantMap = new Map();
+    existingVariants.forEach(variant => {
+      const imageId = variant.imageId?._id || variant.imageId;
+      const attributeId = variant.attributeId?._id || variant.attributeId;
+      const key = `${imageId}_${attributeId || 'null'}`;
+      existingVariantMap.set(key, variant);
+    });
+
+    // Tạo ProductVariant cho từng biến thể x từng màu
+    const createdVariants = [];
+    const usedVariantIds = new Set();
+    
+    for (const variant of productData.variants) {
+      // Tạo ProductAttribute cho thuộc tính riêng của variant này (nếu có)
+      let variantAttributeId = null;
+      if (variant.attributeIndices && variant.attributeIndices.length > 0) {
+        const variantSpecificAttrs = {};
+        variant.attributeIndices.forEach(idx => {
+          const attr = productData.attributes[idx];
+          if (attr && attr.name && attr.value) {
+            variantSpecificAttrs[attr.name] = attr.value;
+          }
+        });
+        
+        if (Object.keys(variantSpecificAttrs).length > 0) {
+          const attrKey = JSON.stringify(variantSpecificAttrs);
+          
+          // Kiểm tra xem đã tạo ProductAttribute cho tổ hợp này chưa
+          if (!createdAttributes.has(attrKey)) {
+            // Kiểm tra xem đã có ProductAttribute này trong DB chưa
+            const existingAttribute = existingAttributeMap.get(attrKey);
+            
+            if (existingAttribute) {
+              // Sử dụng lại ProductAttribute hiện tại
+              createdAttributes.set(attrKey, existingAttribute._id);
+            } else {
+              // Tạo ProductAttribute mới
+              const variantAttribute = await ProductAttribute.create({
+                productId: id,
+                name: 'variant_specific',
+                value: attrKey
+              });
+              createdAttributes.set(attrKey, variantAttribute._id);
+            }
+          }
+          
+          variantAttributeId = createdAttributes.get(attrKey);
+        }
+      }
+      
+      // Tạo ProductVariant cho từng màu với cùng thuộc tính
+      for (let colorIdx = 0; colorIdx < createdImages.length; colorIdx++) {
+        const imageId = createdImages[colorIdx]._id;
+        const variantKey = `${imageId}_${variantAttributeId || 'null'}`;
+        
+        // Kiểm tra xem đã có ProductVariant này chưa
+        const existingVariant = existingVariantMap.get(variantKey);
+        
+        if (existingVariant) {
+          // Cập nhật ProductVariant hiện tại
+          const updatedVariant = await ProductVariant.findByIdAndUpdate(
+            existingVariant._id,
+            {
+              price: Number(variant.price),
+              offerPrice: Number(variant.offerPrice) || 0
+            },
+            { new: true }
+          );
+          createdVariants.push(updatedVariant);
+          usedVariantIds.add(existingVariant._id.toString());
+        } else {
+          // Tạo ProductVariant mới
+          const productVariant = await ProductVariant.create({
+            productId: id,
+            attributeId: variantAttributeId,
+            imageId: imageId,
+            price: Number(variant.price),
+            offerPrice: Number(variant.offerPrice) || 0
+          });
+          createdVariants.push(productVariant);
+          usedVariantIds.add(productVariant._id.toString());
+        }
+      }
+    }
+
+    // Xóa các ProductVariant không còn sử dụng
+    const allExistingVariantIds = existingVariants.map(v => v._id.toString());
+    const variantIdsToDelete = allExistingVariantIds.filter(id => !usedVariantIds.has(id));
+    if (variantIdsToDelete.length > 0) {
+      await ProductVariant.deleteMany({ _id: { $in: variantIdsToDelete } });
+    }
+
+    // Xóa các ProductAttribute không còn sử dụng
+    const usedAttributeIds = Array.from(createdAttributes.values());
+    await ProductAttribute.deleteMany({ 
+      productId: id, 
+      _id: { $nin: usedAttributeIds } 
+    });
 
     res.json({ 
       success: true, 
       message: "Cập nhật sản phẩm thành công", 
-      product: updatedProduct 
+      product: updatedProduct,
+      images: createdImages,
+      variants: createdVariants
     });
   } catch (error) {
+    console.error('Error in editProduct:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -295,10 +491,63 @@ export const getProducts = async (req, res) => {
     
     const total = await Product.countDocuments({ isActive: true });
     
-    // Lấy variants cho từng product
+    // Xử lý variants với đầy đủ thông tin EAV cho từng product
     const productsWithVariants = await Promise.all(products.map(async (product) => {
-      const variants = await ProductVariant.find({ productId: product._id });
-      return { ...product.toObject(), variants };
+      const variants = await ProductVariant.find({ productId: product._id })
+        .populate('attributeId')
+        .populate('imageId');
+      
+      // Xử lý variants để có cấu trúc dữ liệu rõ ràng
+      const processedVariants = variants.map(variant => {
+        const variantObj = variant.toObject();
+        
+        // Parse attributes từ JSON string
+        let attributes = {};
+        if (variantObj.attributeId && variantObj.attributeId.value) {
+          try {
+            attributes = JSON.parse(variantObj.attributeId.value);
+          } catch (e) {
+            console.error('Error parsing attributes:', e);
+          }
+        }
+        
+        // Lấy images và colorName từ imageId (ProductImage)
+        let images = [];
+        let colorName = '';
+        if (variantObj.imageId) {
+          if (variantObj.imageId.value) {
+            images = Array.isArray(variantObj.imageId.value) ? variantObj.imageId.value : [variantObj.imageId.value];
+          }
+          if (variantObj.imageId.name) {
+            colorName = variantObj.imageId.name;
+          }
+        }
+        
+        return {
+          _id: variantObj._id,
+          price: variantObj.price,
+          offerPrice: variantObj.offerPrice,
+          attributes,
+          images,
+          colorName,
+          createdAt: variantObj.createdAt
+        };
+      });
+      
+      // Chuyển đổi commonAttributes từ Map sang Object
+      const productObj = product.toObject();
+      let commonAttributes = {};
+      if (productObj.commonAttributes && productObj.commonAttributes instanceof Map) {
+        commonAttributes = Object.fromEntries(productObj.commonAttributes);
+      } else if (productObj.commonAttributes && typeof productObj.commonAttributes === 'object') {
+        commonAttributes = productObj.commonAttributes;
+      }
+      
+      return { 
+        ...productObj, 
+        variants: processedVariants,
+        commonAttributes 
+      };
     }));
     
     res.json({ 
@@ -321,11 +570,66 @@ export const getSellerProducts = async (req, res) => {
     const products = await Product.find({})
       .populate('category')
       .populate('brand');
-    // Lấy variants cho từng product
+    
+    // Lấy variants với đầy đủ thông tin EAV cho từng product
     const productsWithVariants = await Promise.all(products.map(async (product) => {
-      const variants = await ProductVariant.find({ productId: product._id });
-      return { ...product.toObject(), variants };
+      const variants = await ProductVariant.find({ productId: product._id })
+        .populate('attributeId')
+        .populate('imageId');
+      
+      // Xử lý variants để có cấu trúc dữ liệu rõ ràng
+      const processedVariants = variants.map(variant => {
+        const variantObj = variant.toObject();
+        
+        // Parse attributes từ JSON string
+        let attributes = {};
+        if (variantObj.attributeId && variantObj.attributeId.value) {
+          try {
+            attributes = JSON.parse(variantObj.attributeId.value);
+          } catch (e) {
+            console.error('Error parsing attributes:', e);
+          }
+        }
+        
+        // Lấy images và colorName từ imageId (ProductImage)
+        let images = [];
+        let colorName = '';
+        if (variantObj.imageId) {
+          if (variantObj.imageId.value) {
+            images = Array.isArray(variantObj.imageId.value) ? variantObj.imageId.value : [variantObj.imageId.value];
+          }
+          if (variantObj.imageId.name) {
+            colorName = variantObj.imageId.name; // Tên màu từ ProductImage
+          }
+        }
+        
+        return {
+          _id: variantObj._id,
+          price: variantObj.price,
+          offerPrice: variantObj.offerPrice,
+          attributes,
+          images,
+          colorName, // Thêm tên màu
+          createdAt: variantObj.createdAt
+        };
+      });
+      
+      // Chuyển đổi commonAttributes từ Map sang Object để frontend dễ sử dụng
+      const productObj = product.toObject();
+      let commonAttributes = {};
+      if (productObj.commonAttributes && productObj.commonAttributes instanceof Map) {
+        commonAttributes = Object.fromEntries(productObj.commonAttributes);
+      } else if (productObj.commonAttributes && typeof productObj.commonAttributes === 'object') {
+        commonAttributes = productObj.commonAttributes;
+      }
+      
+      return { 
+        ...productObj, 
+        variants: processedVariants,
+        commonAttributes 
+      };
     }));
+    
     res.json({ success: true, products: productsWithVariants });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -335,14 +639,67 @@ export const getSellerProducts = async (req, res) => {
 export const getProductsByCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const products = await Product.find({ category: id })
+    const products = await Product.find({ category: id, isActive: true })
       .populate('category')
       .populate('brand');
     
-    // Lấy variants cho từng product
+    // Xử lý variants với đầy đủ thông tin EAV cho từng product
     const productsWithVariants = await Promise.all(products.map(async (product) => {
-      const variants = await ProductVariant.find({ productId: product._id });
-      return { ...product.toObject(), variants };
+      const variants = await ProductVariant.find({ productId: product._id })
+        .populate('attributeId')
+        .populate('imageId');
+      
+      // Xử lý variants để có cấu trúc dữ liệu rõ ràng
+      const processedVariants = variants.map(variant => {
+        const variantObj = variant.toObject();
+        
+        // Parse attributes từ JSON string
+        let attributes = {};
+        if (variantObj.attributeId && variantObj.attributeId.value) {
+          try {
+            attributes = JSON.parse(variantObj.attributeId.value);
+          } catch (e) {
+            console.error('Error parsing attributes:', e);
+          }
+        }
+        
+        // Lấy images và colorName từ imageId (ProductImage)
+        let images = [];
+        let colorName = '';
+        if (variantObj.imageId) {
+          if (variantObj.imageId.value) {
+            images = Array.isArray(variantObj.imageId.value) ? variantObj.imageId.value : [variantObj.imageId.value];
+          }
+          if (variantObj.imageId.name) {
+            colorName = variantObj.imageId.name;
+          }
+        }
+        
+        return {
+          _id: variantObj._id,
+          price: variantObj.price,
+          offerPrice: variantObj.offerPrice,
+          attributes,
+          images,
+          colorName,
+          createdAt: variantObj.createdAt
+        };
+      });
+      
+      // Chuyển đổi commonAttributes từ Map sang Object
+      const productObj = product.toObject();
+      let commonAttributes = {};
+      if (productObj.commonAttributes && productObj.commonAttributes instanceof Map) {
+        commonAttributes = Object.fromEntries(productObj.commonAttributes);
+      } else if (productObj.commonAttributes && typeof productObj.commonAttributes === 'object') {
+        commonAttributes = productObj.commonAttributes;
+      }
+      
+      return { 
+        ...productObj, 
+        variants: processedVariants,
+        commonAttributes 
+      };
     }));
     
     res.json({ success: true, products: productsWithVariants });
@@ -354,14 +711,67 @@ export const getProductsByCategory = async (req, res) => {
 export const getProductsByBrand = async (req, res) => {
   try {
     const { id } = req.params;
-    const products = await Product.find({ brand: id })
+    const products = await Product.find({ brand: id, isActive: true })
       .populate('category')
       .populate('brand');
     
-    // Lấy variants cho từng product
+    // Xử lý variants với đầy đủ thông tin EAV cho từng product
     const productsWithVariants = await Promise.all(products.map(async (product) => {
-      const variants = await ProductVariant.find({ productId: product._id });
-      return { ...product.toObject(), variants };
+      const variants = await ProductVariant.find({ productId: product._id })
+        .populate('attributeId')
+        .populate('imageId');
+      
+      // Xử lý variants để có cấu trúc dữ liệu rõ ràng
+      const processedVariants = variants.map(variant => {
+        const variantObj = variant.toObject();
+        
+        // Parse attributes từ JSON string
+        let attributes = {};
+        if (variantObj.attributeId && variantObj.attributeId.value) {
+          try {
+            attributes = JSON.parse(variantObj.attributeId.value);
+          } catch (e) {
+            console.error('Error parsing attributes:', e);
+          }
+        }
+        
+        // Lấy images và colorName từ imageId (ProductImage)
+        let images = [];
+        let colorName = '';
+        if (variantObj.imageId) {
+          if (variantObj.imageId.value) {
+            images = Array.isArray(variantObj.imageId.value) ? variantObj.imageId.value : [variantObj.imageId.value];
+          }
+          if (variantObj.imageId.name) {
+            colorName = variantObj.imageId.name;
+          }
+        }
+        
+        return {
+          _id: variantObj._id,
+          price: variantObj.price,
+          offerPrice: variantObj.offerPrice,
+          attributes,
+          images,
+          colorName,
+          createdAt: variantObj.createdAt
+        };
+      });
+      
+      // Chuyển đổi commonAttributes từ Map sang Object
+      const productObj = product.toObject();
+      let commonAttributes = {};
+      if (productObj.commonAttributes && productObj.commonAttributes instanceof Map) {
+        commonAttributes = Object.fromEntries(productObj.commonAttributes);
+      } else if (productObj.commonAttributes && typeof productObj.commonAttributes === 'object') {
+        commonAttributes = productObj.commonAttributes;
+      }
+      
+      return { 
+        ...productObj, 
+        variants: processedVariants,
+        commonAttributes 
+      };
     }));
     
     res.json({ success: true, products: productsWithVariants });
@@ -393,10 +803,63 @@ export const getFilteredProducts = async (req, res) => {
     
     const total = await Product.countDocuments(query);
     
-    // Lấy variants cho từng product
+    // Xử lý variants với đầy đủ thông tin EAV cho từng product
     const productsWithVariants = await Promise.all(products.map(async (product) => {
-      const variants = await ProductVariant.find({ productId: product._id });
-      return { ...product.toObject(), variants };
+      const variants = await ProductVariant.find({ productId: product._id })
+        .populate('attributeId')
+        .populate('imageId');
+      
+      // Xử lý variants để có cấu trúc dữ liệu rõ ràng
+      const processedVariants = variants.map(variant => {
+        const variantObj = variant.toObject();
+        
+        // Parse attributes từ JSON string
+        let attributes = {};
+        if (variantObj.attributeId && variantObj.attributeId.value) {
+          try {
+            attributes = JSON.parse(variantObj.attributeId.value);
+          } catch (e) {
+            console.error('Error parsing attributes:', e);
+          }
+        }
+        
+        // Lấy images và colorName từ imageId (ProductImage)
+        let images = [];
+        let colorName = '';
+        if (variantObj.imageId) {
+          if (variantObj.imageId.value) {
+            images = Array.isArray(variantObj.imageId.value) ? variantObj.imageId.value : [variantObj.imageId.value];
+          }
+          if (variantObj.imageId.name) {
+            colorName = variantObj.imageId.name;
+          }
+        }
+        
+        return {
+          _id: variantObj._id,
+          price: variantObj.price,
+          offerPrice: variantObj.offerPrice,
+          attributes,
+          images,
+          colorName,
+          createdAt: variantObj.createdAt
+        };
+      });
+      
+      // Chuyển đổi commonAttributes từ Map sang Object
+      const productObj = product.toObject();
+      let commonAttributes = {};
+      if (productObj.commonAttributes && productObj.commonAttributes instanceof Map) {
+        commonAttributes = Object.fromEntries(productObj.commonAttributes);
+      } else if (productObj.commonAttributes && typeof productObj.commonAttributes === 'object') {
+        commonAttributes = productObj.commonAttributes;
+      }
+      
+      return { 
+        ...productObj, 
+        variants: processedVariants,
+        commonAttributes 
+      };
     }));
     
     res.json({ 
@@ -453,10 +916,62 @@ export const getProductDetail = async (req, res) => {
       return res.status(404).json({ success: false, message: "Không tìm thấy sản phẩm" });
     }
 
-    // Lấy danh sách variant của sản phẩm này
-    const variants = await ProductVariant.find({ productId: id });
+    // Lấy danh sách variant với đầy đủ thông tin EAV
+    const variants = await ProductVariant.find({ productId: id })
+      .populate('attributeId')
+      .populate('imageId');
+    
+    // Xử lý variants để có cấu trúc dữ liệu rõ ràng
+    const processedVariants = variants.map(variant => {
+      const variantObj = variant.toObject();
+      
+      // Parse attributes từ JSON string
+      let attributes = {};
+      if (variantObj.attributeId && variantObj.attributeId.value) {
+        try {
+          attributes = JSON.parse(variantObj.attributeId.value);
+        } catch (e) {
+          console.error('Error parsing attributes:', e);
+        }
+      }
+      
+      // Lấy images và colorName từ imageId (ProductImage)
+      let images = [];
+      let colorName = '';
+      if (variantObj.imageId) {
+        if (variantObj.imageId.value) {
+          images = Array.isArray(variantObj.imageId.value) ? variantObj.imageId.value : [variantObj.imageId.value];
+        }
+        if (variantObj.imageId.name) {
+          colorName = variantObj.imageId.name;
+        }
+      }
+      
+      return {
+        _id: variantObj._id,
+        price: variantObj.price,
+        offerPrice: variantObj.offerPrice,
+        attributes,
+        images,
+        colorName,
+        createdAt: variantObj.createdAt
+      };
+    });
+    
+    // Chuyển đổi commonAttributes từ Map sang Object
+    const productObj = product.toObject();
+    let commonAttributes = {};
+    if (productObj.commonAttributes && productObj.commonAttributes instanceof Map) {
+      commonAttributes = Object.fromEntries(productObj.commonAttributes);
+    } else if (productObj.commonAttributes && typeof productObj.commonAttributes === 'object') {
+      commonAttributes = productObj.commonAttributes;
+    }
 
-    res.json({ success: true, product, variants });
+    res.json({ 
+      success: true, 
+      product: { ...productObj, commonAttributes }, 
+      variants: processedVariants 
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

@@ -30,7 +30,7 @@ export const addAddress = async (req, res) => {
       ...address,
       userId: req.user.id
     });
-    res.json({ success: true, message: "Address added successfully", address: newAddress });
+    res.json({ success: true, message: "Thêm địa chỉ thành công", address: newAddress });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -115,7 +115,7 @@ export const updateUserRole = async (req, res) => {
 
     res.json({ 
       success: true, 
-      message: "User role updated successfully"
+      message: "Cập nhật quyền người dùng thành công"
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -144,7 +144,7 @@ export const toggleUserBlock = async (req, res) => {
 
     res.json({
       success: true,
-      message: isBlocked ? "User blocked successfully" : "User unblocked successfully",
+      message: isBlocked ? "Khóa người dùng thành công" : "Mở khóa người dùng thành công",
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

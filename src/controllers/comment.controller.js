@@ -3,16 +3,45 @@ import Comment from '../models/Comment.js';
 // Tạo comment mới
 export const createComment = async (req, res) => {
   try {
-    const { targetId, type, content, parentId } = req.body;
+    const { productId, blogId, type, content, parentId } = req.body;
     const userId = req.user.id;
 
-    const comment = await Comment.create({
+    // Validation trong controller
+    if (!type || !['product', 'blog'].includes(type)) {
+      return res.status(400).json({ success: false, message: "Type must be 'product' or 'blog'" });
+    }
+
+    if (type === 'product' && !productId) {
+      return res.status(400).json({ success: false, message: "productId is required for product comments" });
+    }
+
+    if (type === 'blog' && !blogId) {
+      return res.status(400).json({ success: false, message: "blogId is required for blog comments" });
+    }
+
+    if (productId && blogId) {
+      return res.status(400).json({ success: false, message: "Cannot have both productId and blogId" });
+    }
+
+    if (!content || content.trim().length === 0) {
+      return res.status(400).json({ success: false, message: "Content is required" });
+    }
+
+    const commentData = {
       userId,
-      targetId,
       type,
-      content,
+      content: content.trim(),
       parentId: parentId || null
-    });
+    };
+
+    // Thêm productId hoặc blogId tùy theo type
+    if (type === 'product') {
+      commentData.productId = productId;
+    } else {
+      commentData.blogId = blogId;
+    }
+
+    const comment = await Comment.create(commentData);
 
     // Populate thông tin user
     await comment.populate('userId', 'name imageUrl');
@@ -32,12 +61,29 @@ export const getComments = async (req, res) => {
   try {
     const { targetId, type } = req.params;
 
-    // Lấy tất cả comment gốc (không phải reply)
-    const comments = await Comment.find({
-      targetId,
+    // Validation trong controller
+    if (!type || !['product', 'blog'].includes(type)) {
+      return res.status(400).json({ success: false, message: "Invalid type. Must be 'product' or 'blog'" });
+    }
+
+    if (!targetId) {
+      return res.status(400).json({ success: false, message: "targetId is required" });
+    }
+
+    // Tạo query dựa trên type
+    let query = {
       type,
       parentId: null
-    })
+    };
+
+    if (type === 'product') {
+      query.productId = targetId;
+    } else {
+      query.blogId = targetId;
+    }
+
+    // Lấy tất cả comment gốc (không phải reply)
+    const comments = await Comment.find(query)
       .populate('userId', 'name imageUrl')
       .sort({ createdAt: -1 });
 
@@ -76,14 +122,25 @@ export const getAllComments = async (req, res) => {
 // Lấy comments cho seller (có phân trang và filter)
 export const fetchSellerComments = async (req, res) => {
   try {
-    const { page = 1, limit = 10, type, search } = req.query;
+    const { page = 1, limit = 10, type, search, productId, blogId } = req.query;
     const skip = (page - 1) * limit;
 
     let query = {};
     
     // Filter theo type nếu có
     if (type && type !== 'all') {
+      if (!['product', 'blog'].includes(type)) {
+        return res.status(400).json({ success: false, message: "Invalid type. Must be 'product' or 'blog'" });
+      }
       query.type = type;
+    }
+
+    // Filter theo productId hoặc blogId nếu có
+    if (productId) {
+      query.productId = productId;
+    }
+    if (blogId) {
+      query.blogId = blogId;
     }
 
     // Filter theo search nếu có
@@ -121,6 +178,11 @@ export const updateComment = async (req, res) => {
     const { content } = req.body;
     const userId = req.user.id;
 
+    // Validation trong controller
+    if (!content || content.trim().length === 0) {
+      return res.status(400).json({ success: false, message: "Content is required" });
+    }
+
     const comment = await Comment.findOne({ _id: commentId, userId });
     if (!comment) {
       return res.status(404).json({
@@ -129,7 +191,7 @@ export const updateComment = async (req, res) => {
       });
     }
 
-    comment.content = content;
+    comment.content = content.trim();
     await comment.save();
 
     res.json({ 
