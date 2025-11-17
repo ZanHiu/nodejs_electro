@@ -22,7 +22,7 @@ const createTransporter = () => {
 };
 
 // Gửi email xác nhận đơn hàng
-const sendOrderConfirmationEmail = async (userEmail, order, orderItems) => {
+const sendOrderConfirmationEmail = async (userEmail, order, orderItems, user) => {
   try {
     const transporter = createTransporter();
     
@@ -35,7 +35,6 @@ const sendOrderConfirmationEmail = async (userEmail, order, orderItems) => {
         <tr style="border-bottom: 1px solid #eee;">
           <td style="padding: 10px; text-align: left;">
             <strong>${item.product.name}</strong>
-            ${item.variant ? `<br><small style="color: #666;">Phiên bản: ${item.variant.attributes ? Object.values(JSON.parse(item.variant.attributes)).join(', ') : 'N/A'}</small>` : ''}
           </td>
           <td style="padding: 10px; text-align: center;">${item.quantity}</td>
           <td style="padding: 10px; text-align: right;">${itemPrice.toLocaleString('vi-VN')}đ</td>
@@ -47,7 +46,7 @@ const sendOrderConfirmationEmail = async (userEmail, order, orderItems) => {
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: userEmail,
-      subject: `Xác nhận đơn hàng #${order._id.toString().slice(-8).toUpperCase()} - Electro`,
+      subject: `Xác nhận đơn hàng #${order._id.toString().slice(-6).toUpperCase()} - Electro`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9;">
           <div style="background: linear-gradient(135deg, #ff6b35, #f7931e); padding: 30px; text-align: center; color: white;">
@@ -100,10 +99,10 @@ const sendOrderConfirmationEmail = async (userEmail, order, orderItems) => {
             
             <div style="background: #e8f5e8; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
               <h3 style="color: #2d5a2d; margin: 0 0 15px 0;">🚚 Địa chỉ giao hàng</h3>
-              <p style="margin: 5px 0; color: #666;"><strong>Họ tên:</strong> ${order.address.firstName} ${order.address.lastName}</p>
-              <p style="margin: 5px 0; color: #666;"><strong>Số điện thoại:</strong> ${order.address.phone}</p>
-              <p style="margin: 5px 0; color: #666;"><strong>Địa chỉ:</strong> ${order.address.street}, ${order.address.city}, ${order.address.state}, ${order.address.country}</p>
-              ${order.address.zipcode ? `<p style="margin: 5px 0; color: #666;"><strong>Mã bưu điện:</strong> ${order.address.zipcode}</p>` : ''}
+              <p style="margin: 5px 0; color: #666;"><strong>Họ tên:</strong> ${user.name}</p>
+              <p style="margin: 5px 0; color: #666;"><strong>Email:</strong> ${user.email}</p>
+              <p style="margin: 5px 0; color: #666;"><strong>Địa chỉ:</strong> ${order.address.area}, ${order.address.city}, ${order.address.state}</p>
+              ${order.address.pincode ? `<p style="margin: 5px 0; color: #666;"><strong>Mã bưu điện:</strong> ${order.address.pincode}</p>` : ''}
             </div>
             
             <div style="text-align: center; margin: 30px 0;">
@@ -136,56 +135,87 @@ const sendOrderConfirmationEmail = async (userEmail, order, orderItems) => {
 };
 
 // Gửi email hoàn tất đơn hàng
-const sendOrderCompletedEmail = async (userEmail, order, orderItems) => {
+const sendOrderCompletedEmail = async (userEmail, order, orderItems, user) => {
   try {
     const transporter = createTransporter();
     
-    // Tạo HTML cho danh sách sản phẩm
-    const itemsHTML = orderItems.map(item => {
+    // Tạo HTML cho danh sách sản phẩm dạng hóa đơn
+    const itemsHTML = orderItems.map((item, index) => {
       const itemPrice = item.variant ? item.variant.offerPrice : item.product.offerPrice;
       const itemTotal = itemPrice * item.quantity;
       
       return `
-        <tr style="border-bottom: 1px solid #eee;">
-          <td style="padding: 10px; text-align: left;">
-            <strong>${item.product.name}</strong>
-            ${item.variant ? `<br><small style="color: #666;">Phiên bản: ${item.variant.attributes ? Object.values(JSON.parse(item.variant.attributes)).join(', ') : 'N/A'}</small>` : ''}
+        <tr style="border-bottom: 1px solid #ddd;">
+          <td style="padding: 12px 8px; text-align: center; font-weight: bold; color: #666;">${index + 1}</td>
+          <td style="padding: 12px 8px; text-align: left;">
+            <div style="font-weight: bold; color: #333; margin-bottom: 4px;">${item.product.name}</div>
+            ${item.variant ? `<div style="font-size: 12px; color: #666;">Phân loại: ${item.variant.color || ''} ${item.variant.storage || ''}</div>` : ''}
           </td>
-          <td style="padding: 10px; text-align: center;">${item.quantity}</td>
-          <td style="padding: 10px; text-align: right;">${itemPrice.toLocaleString('vi-VN')}đ</td>
-          <td style="padding: 10px; text-align: right;"><strong>${itemTotal.toLocaleString('vi-VN')}đ</strong></td>
+          <td style="padding: 12px 8px; text-align: center; font-weight: bold;">${item.quantity}</td>
+          <td style="padding: 12px 8px; text-align: right;">${itemPrice.toLocaleString('vi-VN')}đ</td>
+          <td style="padding: 12px 8px; text-align: right; font-weight: bold; color: #333;">${itemTotal.toLocaleString('vi-VN')}đ</td>
         </tr>
       `;
     }).join('');
     
+    // Tính toán các khoản phí
+    const subtotal = order.amount + (order.coupon ? order.coupon.discountAmount : 0);
+    const shippingFee = 0; // Có thể thêm phí ship nếu cần
+    const discount = order.coupon ? order.coupon.discountAmount : 0;
+    
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: userEmail,
-      subject: `Đơn hàng #${order._id.toString().slice(-8).toUpperCase()} đã được giao thành công! - Electro`,
+      subject: `Hóa đơn điện tử - Đơn hàng #${order._id.toString().slice(-6).toUpperCase()} đã giao thành công! - Electro`,
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9;">
+        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 700px; margin: 0 auto; background: #f8f9fa;">
+          <!-- Header -->
           <div style="background: linear-gradient(135deg, #28a745, #20c997); padding: 30px; text-align: center; color: white;">
-            <h1 style="margin: 0; font-size: 28px;">🎉 Đơn hàng đã được giao thành công!</h1>
-            <p style="margin: 10px 0 0 0; font-size: 16px;">Cảm ơn bạn đã tin tưởng và mua sắm tại Electro</p>
+            <h1 style="margin: 0; font-size: 28px; font-weight: bold;">🎉 GIAO HÀNG THÀNH CÔNG</h1>
+            <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Hóa đơn điện tử - Electro Store</p>
           </div>
           
           <div style="padding: 30px; background: white;">
-            <div style="background: #d4edda; padding: 20px; border-radius: 8px; margin-bottom: 25px; border-left: 4px solid #28a745;">
-              <h2 style="color: #155724; margin: 0 0 15px 0; font-size: 20px;">✅ Giao hàng thành công</h2>
-              <p style="margin: 5px 0; color: #155724;"><strong>Mã đơn hàng:</strong> #${order._id.toString().slice(-8).toUpperCase()}</p>
-              <p style="margin: 5px 0; color: #155724;"><strong>Ngày giao:</strong> ${new Date().toLocaleString('vi-VN')}</p>
-              <p style="margin: 5px 0; color: #155724;"><strong>Trạng thái:</strong> <span style="font-weight: bold;">Đã giao hàng</span></p>
+            <!-- Thông tin hóa đơn -->
+            <div style="background: #f8f9fa; padding: 25px; border-radius: 10px; margin-bottom: 30px; border-left: 5px solid #28a745;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <div>
+                  <h2 style="color: #333; margin: 0; font-size: 24px; font-weight: bold;">HÓA ĐƠN BÁN HÀNG</h2>
+                  <p style="margin: 5px 0 0 0; color: #666; font-size: 14px;">Số: #${order._id.toString().slice(-6).toUpperCase()}</p>
+                </div>
+                <div style="text-align: right;">
+                  <div style="background: #28a745; color: white; padding: 8px 16px; border-radius: 20px; font-weight: bold; font-size: 14px;">ĐÃ THANH TOÁN</div>
+                </div>
+              </div>
+              
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div>
+                  <h4 style="color: #333; margin: 0 0 10px 0; font-size: 16px;">📍 Thông tin người mua:</h4>
+                  <p style="margin: 3px 0; color: #666; font-size: 14px;"><strong>Họ tên:</strong> ${user.name}</p>
+                  <p style="margin: 3px 0; color: #666; font-size: 14px;"><strong>Email:</strong> ${user.email}</p>
+                  <p style="margin: 3px 0; color: #666; font-size: 14px;"><strong>Địa chỉ:</strong> ${order.address}</p>
+                </div>
+                <div>
+                  <h4 style="color: #333; margin: 0 0 10px 0; font-size: 16px;">📅 Thông tin đơn hàng:</h4>
+                  <p style="margin: 3px 0; color: #666; font-size: 14px;"><strong>Ngày đặt:</strong> ${new Date(order.date).toLocaleDateString('vi-VN')}</p>
+                  <p style="margin: 3px 0; color: #666; font-size: 14px;"><strong>Ngày giao:</strong> ${new Date().toLocaleDateString('vi-VN')}</p>
+                  <p style="margin: 3px 0; color: #666; font-size: 14px;"><strong>Phương thức TT:</strong> ${order.paymentMethod === 'COD' ? 'Tiền mặt' : 'VNPay'}</p>
+                </div>
+              </div>
             </div>
             
-            <div style="margin-bottom: 25px;">
-              <h3 style="color: #333; margin-bottom: 15px;">📦 Chi tiết sản phẩm đã giao</h3>
-              <table style="width: 100%; border-collapse: collapse; background: white; border: 1px solid #eee;">
+            <!-- Bảng chi tiết sản phẩm dạng hóa đơn -->
+            <div style="margin-bottom: 30px;">
+              <h3 style="color: #333; margin-bottom: 20px; font-size: 20px; border-bottom: 2px solid #28a745; padding-bottom: 10px;">📦 CHI TIẾT SẢN PHẨM</h3>
+              
+              <table style="width: 100%; border-collapse: collapse; background: white; border: 2px solid #dee2e6; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                 <thead>
-                  <tr style="background: #f8f9fa;">
-                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #eee;">Sản phẩm</th>
-                    <th style="padding: 12px; text-align: center; border-bottom: 2px solid #eee;">SL</th>
-                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #eee;">Đơn giá</th>
-                    <th style="padding: 12px; text-align: right; border-bottom: 2px solid #eee;">Thành tiền</th>
+                  <tr style="background: linear-gradient(135deg, #f8f9fa, #e9ecef);">
+                    <th style="padding: 15px 8px; text-align: center; border-bottom: 2px solid #dee2e6; font-weight: bold; color: #495057; font-size: 14px;">STT</th>
+                    <th style="padding: 15px 8px; text-align: left; border-bottom: 2px solid #dee2e6; font-weight: bold; color: #495057; font-size: 14px;">TÊN SẢN PHẨM</th>
+                    <th style="padding: 15px 8px; text-align: center; border-bottom: 2px solid #dee2e6; font-weight: bold; color: #495057; font-size: 14px;">SL</th>
+                    <th style="padding: 15px 8px; text-align: right; border-bottom: 2px solid #dee2e6; font-weight: bold; color: #495057; font-size: 14px;">ĐƠN GIÁ</th>
+                    <th style="padding: 15px 8px; text-align: right; border-bottom: 2px solid #dee2e6; font-weight: bold; color: #495057; font-size: 14px;">THÀNH TIỀN</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -194,19 +224,46 @@ const sendOrderCompletedEmail = async (userEmail, order, orderItems) => {
               </table>
             </div>
             
-            <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
-              <div style="display: flex; justify-content: space-between; padding-top: 10px; border-top: 2px solid #ddd;">
-                <span style="font-size: 18px; font-weight: bold; color: #333;">Tổng giá trị đơn hàng:</span>
-                <span style="font-size: 18px; font-weight: bold; color: #28a745;">${order.amount.toLocaleString('vi-VN')}đ</span>
+            <!-- Tổng kết thanh toán dạng hóa đơn -->
+            <div style="background: #f8f9fa; padding: 25px; border-radius: 10px; border: 2px solid #dee2e6;">
+              <h3 style="color: #333; margin: 0 0 20px 0; font-size: 18px; text-align: center; border-bottom: 1px solid #dee2e6; padding-bottom: 10px;">💰 TỔNG KẾT THANH TOÁN</h3>
+              
+              <div style="max-width: 400px; margin: 0 auto;">
+                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dotted #ccc;">
+                  <span style="color: #666; font-size: 15px;">Tạm tính:</span>
+                  <span style="color: #666; font-size: 15px; font-weight: 500;">${subtotal.toLocaleString('vi-VN')}đ</span>
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dotted #ccc;">
+                  <span style="color: #666; font-size: 15px;">Phí vận chuyển:</span>
+                  <span style="color: #666; font-size: 15px; font-weight: 500;">${shippingFee.toLocaleString('vi-VN')}đ</span>
+                </div>
+                
+                ${discount > 0 ? `
+                  <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dotted #ccc;">
+                    <span style="color: #dc3545; font-size: 15px;">Giảm giá (${order.coupon.code}):</span>
+                    <span style="color: #dc3545; font-size: 15px; font-weight: 500;">-${discount.toLocaleString('vi-VN')}đ</span>
+                  </div>
+                ` : ''}
+                
+                <div style="display: flex; justify-content: space-between; padding: 15px 0; border-top: 2px solid #28a745; margin-top: 10px;">
+                  <span style="font-size: 18px; font-weight: bold; color: #333;">TỔNG CỘNG:</span>
+                  <span style="font-size: 20px; font-weight: bold; color: #28a745;">${order.amount.toLocaleString('vi-VN')}đ</span>
+                </div>
+                
+                <div style="text-align: center; margin-top: 15px; padding: 10px; background: #d4edda; border-radius: 5px;">
+                  <span style="color: #155724; font-size: 14px; font-weight: bold;">✅ ĐÃ THANH TOÁN THÀNH CÔNG</span>
+                </div>
               </div>
             </div>
             
-            <div style="background: #e7f3ff; padding: 20px; border-radius: 8px; margin-bottom: 25px;">
+            <!-- Các phần khác giữ nguyên -->
+            <div style="background: #e7f3ff; padding: 20px; border-radius: 8px; margin: 25px 0;">
               <h3 style="color: #0066cc; margin: 0 0 15px 0;">⭐ Đánh giá sản phẩm</h3>
               <p style="margin: 0; color: #0066cc;">Hãy chia sẻ trải nghiệm của bạn về sản phẩm để giúp khách hàng khác có thêm thông tin tham khảo!</p>
               <div style="text-align: center; margin-top: 15px;">
                 <a href="${process.env.CLIENT_URL}/my-orders" 
-                   style="background: #0066cc; color: white; padding: 10px 25px; text-decoration: none; border-radius: 20px; display: inline-block; font-weight: bold;">
+                   style="background: #0066cc; color: white; padding: 12px 30px; text-decoration: none; border-radius: 25px; display: inline-block; font-weight: bold;">
                   Đánh giá ngay
                 </a>
               </div>
@@ -217,7 +274,7 @@ const sendOrderCompletedEmail = async (userEmail, order, orderItems) => {
               <p style="margin: 0; color: #856404;">Cảm ơn bạn đã mua sắm! Hãy theo dõi email để nhận những ưu đãi hấp dẫn trong tương lai.</p>
               <div style="text-align: center; margin-top: 15px;">
                 <a href="${process.env.CLIENT_URL}" 
-                   style="background: #ffc107; color: #212529; padding: 10px 25px; text-decoration: none; border-radius: 20px; display: inline-block; font-weight: bold;">
+                   style="background: #ffc107; color: #212529; padding: 12px 30px; text-decoration: none; border-radius: 25px; display: inline-block; font-weight: bold;">
                   Tiếp tục mua sắm
                 </a>
               </div>
@@ -230,18 +287,20 @@ const sendOrderCompletedEmail = async (userEmail, order, orderItems) => {
             </div>
           </div>
           
+          <!-- Footer -->
           <div style="padding: 20px; background: #333; color: white; text-align: center; font-size: 12px;">
-            <p style="margin: 0;">© 2024 Electro. Tất cả quyền được bảo lưu.</p>
-            <p style="margin: 5px 0 0 0;">Email này được gửi tự động, vui lòng không trả lời.</p>
+            <p style="margin: 0;">© 2024 Electro Store. Tất cả quyền được bảo lưu.</p>
+            <p style="margin: 5px 0 0 0;">Hóa đơn điện tử này được tạo tự động bởi hệ thống.</p>
+            <p style="margin: 5px 0 0 0;">Hotline: 1900-xxxx | Email: support@electro.com</p>
           </div>
         </div>
       `
     };
 
     await transporter.sendMail(mailOptions);
-    console.log('Email hoàn tất đơn hàng đã gửi đến:', userEmail);
+    console.log('Email hóa đơn hoàn tất đơn hàng đã gửi đến:', userEmail);
   } catch (error) {
-    console.error('Lỗi gửi email hoàn tất đơn hàng:', error);
+    console.error('Lỗi gửi email hóa đơn hoàn tất đơn hàng:', error);
   }
 };
 
@@ -397,7 +456,7 @@ export const createOrder = async (req, res) => {
         .populate('items.product')
         .populate('items.variant');
       
-      await sendOrderConfirmationEmail(user.email, populatedOrder, populatedOrder.items);
+      await sendOrderConfirmationEmail(user.email, populatedOrder, populatedOrder.items, user);
     } catch (emailError) {
       console.error('Lỗi gửi email xác nhận đơn hàng:', emailError);
       // Không throw error để không ảnh hưởng đến việc tạo đơn hàng
@@ -488,11 +547,71 @@ export const getOrders = async (req, res) => {
 
 export const getPendingOrders = async (req, res) => {
   try {
-    const orders = await Order.find({ userId: req.user.id, status: OrderStatus.PENDING })
+    const orders = await Order.find({ status: OrderStatus.PENDING })
       .populate('address')
-      .populate('items.product')
-      .populate('items.variant');
-    res.json({ success: true, orders });
+      .populate('items.product');
+    
+    // Xử lý variants với đầy đủ thông tin EAV cho từng order
+    const ordersWithProcessedVariants = await Promise.all(orders.map(async (order) => {
+      const orderObj = order.toObject();
+      
+      // Xử lý từng item trong order
+      const processedItems = await Promise.all(orderObj.items.map(async (item) => {
+        if (item.variant) {
+          // Lấy variant với đầy đủ thông tin EAV
+          const variant = await ProductVariant.findById(item.variant)
+            .populate('attributeIds')
+            .populate('imageId');
+          
+          if (variant) {
+            const variantObj = variant.toObject();
+            
+            // Xử lý attributes từ mảng attributeIds
+            let attributes = {};
+            if (variantObj.attributeIds && variantObj.attributeIds.length > 0) {
+              variantObj.attributeIds.forEach(attr => {
+                if (attr && attr.name && attr.value) {
+                  attributes[attr.name] = attr.value;
+                }
+              });
+            }
+            
+            // Lấy images và colorName từ imageId (ProductImage)
+            let images = [];
+            let colorName = '';
+            if (variantObj.imageId) {
+              if (variantObj.imageId.value) {
+                images = Array.isArray(variantObj.imageId.value) ? variantObj.imageId.value : [variantObj.imageId.value];
+              }
+              if (variantObj.imageId.name) {
+                colorName = variantObj.imageId.name;
+              }
+            }
+            
+            return {
+              ...item,
+              variant: {
+                _id: variantObj._id,
+                price: variantObj.price,
+                offerPrice: variantObj.offerPrice,
+                attributes,
+                images,
+                colorName,
+                createdAt: variantObj.createdAt
+              }
+            };
+          }
+        }
+        return item;
+      }));
+      
+      return {
+        ...orderObj,
+        items: processedItems
+      };
+    }));
+    
+    res.json({ success: true, orders: ordersWithProcessedVariants });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -500,11 +619,71 @@ export const getPendingOrders = async (req, res) => {
 
 export const getProcessingOrders = async (req, res) => {
   try {
-    const orders = await Order.find({ userId: req.user.id, status: OrderStatus.PROCESSING })
+    const orders = await Order.find({ status: OrderStatus.PROCESSING })
       .populate('address')
-      .populate('items.product')
-      .populate('items.variant');
-    res.json({ success: true, orders });
+      .populate('items.product');
+    
+    // Xử lý variants với đầy đủ thông tin EAV cho từng order
+    const ordersWithProcessedVariants = await Promise.all(orders.map(async (order) => {
+      const orderObj = order.toObject();
+      
+      // Xử lý từng item trong order
+      const processedItems = await Promise.all(orderObj.items.map(async (item) => {
+        if (item.variant) {
+          // Lấy variant với đầy đủ thông tin EAV
+          const variant = await ProductVariant.findById(item.variant)
+            .populate('attributeIds')
+            .populate('imageId');
+          
+          if (variant) {
+            const variantObj = variant.toObject();
+            
+            // Xử lý attributes từ mảng attributeIds
+            let attributes = {};
+            if (variantObj.attributeIds && variantObj.attributeIds.length > 0) {
+              variantObj.attributeIds.forEach(attr => {
+                if (attr && attr.name && attr.value) {
+                  attributes[attr.name] = attr.value;
+                }
+              });
+            }
+            
+            // Lấy images và colorName từ imageId (ProductImage)
+            let images = [];
+            let colorName = '';
+            if (variantObj.imageId) {
+              if (variantObj.imageId.value) {
+                images = Array.isArray(variantObj.imageId.value) ? variantObj.imageId.value : [variantObj.imageId.value];
+              }
+              if (variantObj.imageId.name) {
+                colorName = variantObj.imageId.name;
+              }
+            }
+            
+            return {
+              ...item,
+              variant: {
+                _id: variantObj._id,
+                price: variantObj.price,
+                offerPrice: variantObj.offerPrice,
+                attributes,
+                images,
+                colorName,
+                createdAt: variantObj.createdAt
+              }
+            };
+          }
+        }
+        return item;
+      }));
+      
+      return {
+        ...orderObj,
+        items: processedItems
+      };
+    }));
+    
+    res.json({ success: true, orders: ordersWithProcessedVariants });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -512,27 +691,147 @@ export const getProcessingOrders = async (req, res) => {
 
 export const getDeliveredOrders = async (req, res) => {
   try {
-    const orders = await Order.find({ userId: req.user.id, status: OrderStatus.DELIVERED })
+    const orders = await Order.find({ status: OrderStatus.DELIVERED })
       .populate('address')
-      .populate('items.product')
-      .populate('items.variant');
-    res.json({ success: true, orders });
+      .populate('items.product');
+    
+    // Xử lý variants với đầy đủ thông tin EAV cho từng order
+    const ordersWithProcessedVariants = await Promise.all(orders.map(async (order) => {
+      const orderObj = order.toObject();
+      
+      // Xử lý từng item trong order
+      const processedItems = await Promise.all(orderObj.items.map(async (item) => {
+        if (item.variant) {
+          // Lấy variant với đầy đủ thông tin EAV
+          const variant = await ProductVariant.findById(item.variant)
+            .populate('attributeIds')
+            .populate('imageId');
+          
+          if (variant) {
+            const variantObj = variant.toObject();
+            
+            // Xử lý attributes từ mảng attributeIds
+            let attributes = {};
+            if (variantObj.attributeIds && variantObj.attributeIds.length > 0) {
+              variantObj.attributeIds.forEach(attr => {
+                if (attr && attr.name && attr.value) {
+                  attributes[attr.name] = attr.value;
+                }
+              });
+            }
+            
+            // Lấy images và colorName từ imageId (ProductImage)
+            let images = [];
+            let colorName = '';
+            if (variantObj.imageId) {
+              if (variantObj.imageId.value) {
+                images = Array.isArray(variantObj.imageId.value) ? variantObj.imageId.value : [variantObj.imageId.value];
+              }
+              if (variantObj.imageId.name) {
+                colorName = variantObj.imageId.name;
+              }
+            }
+            
+            return {
+              ...item,
+              variant: {
+                _id: variantObj._id,
+                price: variantObj.price,
+                offerPrice: variantObj.offerPrice,
+                attributes,
+                images,
+                colorName,
+                createdAt: variantObj.createdAt
+              }
+            };
+          }
+        }
+        return item;
+      }));
+      
+      return {
+        ...orderObj,
+        items: processedItems
+      };
+    }));
+    
+    res.json({ success: true, orders: ordersWithProcessedVariants });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
-}
+};
 
 export const getCancelledOrders = async (req, res) => {
   try {
-    const orders = await Order.find({ userId: req.user.id, status: OrderStatus.CANCELLED })
+    const orders = await Order.find({ status: OrderStatus.CANCELLED })
       .populate('address')
-      .populate('items.product')
-      .populate('items.variant');
-    res.json({ success: true, orders });
+      .populate('items.product');
+    
+    // Xử lý variants với đầy đủ thông tin EAV cho từng order
+    const ordersWithProcessedVariants = await Promise.all(orders.map(async (order) => {
+      const orderObj = order.toObject();
+      
+      // Xử lý từng item trong order
+      const processedItems = await Promise.all(orderObj.items.map(async (item) => {
+        if (item.variant) {
+          // Lấy variant với đầy đủ thông tin EAV
+          const variant = await ProductVariant.findById(item.variant)
+            .populate('attributeIds')
+            .populate('imageId');
+          
+          if (variant) {
+            const variantObj = variant.toObject();
+            
+            // Xử lý attributes từ mảng attributeIds
+            let attributes = {};
+            if (variantObj.attributeIds && variantObj.attributeIds.length > 0) {
+              variantObj.attributeIds.forEach(attr => {
+                if (attr && attr.name && attr.value) {
+                  attributes[attr.name] = attr.value;
+                }
+              });
+            }
+            
+            // Lấy images và colorName từ imageId (ProductImage)
+            let images = [];
+            let colorName = '';
+            if (variantObj.imageId) {
+              if (variantObj.imageId.value) {
+                images = Array.isArray(variantObj.imageId.value) ? variantObj.imageId.value : [variantObj.imageId.value];
+              }
+              if (variantObj.imageId.name) {
+                colorName = variantObj.imageId.name;
+              }
+            }
+            
+            return {
+              ...item,
+              variant: {
+                _id: variantObj._id,
+                price: variantObj.price,
+                offerPrice: variantObj.offerPrice,
+                attributes,
+                images,
+                colorName,
+                createdAt: variantObj.createdAt
+              }
+            };
+          }
+        }
+        return item;
+      }));
+      
+      return {
+        ...orderObj,
+        items: processedItems
+      };
+    }));
+    
+    res.json({ success: true, orders: ordersWithProcessedVariants });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
-}
+};
 
 export const getSellerOrders = async (req, res) => {
   try {
@@ -623,7 +922,7 @@ export const updateOrderStatus = async (req, res) => {
           .populate('items.variant');
         
         if (user && user.email) {
-          await sendOrderCompletedEmail(user.email, populatedOrder, populatedOrder.items);
+          await sendOrderCompletedEmail(user.email, populatedOrder, populatedOrder.items, user);
         }
       } catch (emailError) {
         console.error('Lỗi gửi email hoàn tất đơn hàng:', emailError);
@@ -779,7 +1078,7 @@ export const verifyPayment = async (req, res) => {
         {
           $set: {
             paymentStatus: responseCode === '00' ? PaymentStatus.PAID : PaymentStatus.FAILED,
-            status: responseCode === '00' ? OrderStatus.PROCESSING : OrderStatus.CANCELLED,
+            status: responseCode === '00' ? OrderStatus.PENDING : OrderStatus.CANCELLED,
             paymentDetails: {
               vnpayTxnRef: transactionNo,
               vnpayAmount: amount ? Number(amount) / 100 : 0,

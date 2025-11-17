@@ -30,15 +30,16 @@ const app = express();
 
 app.use(express.json());
 // Cấu hình CORS chi tiết hơn
-app.use(cors({
-  origin: [
-    'https://nextjs-electro-datn.vercel.app',
-    'http://localhost:3000'
-  ],
-  credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  methods: ['GET', 'POST', 'PUT', 'DELETE']
-}));
+// app.use(cors({
+//   origin: [
+//     'https://nextjs-electro-datn.vercel.app',
+//     'http://localhost:3000'
+//   ],
+//   credentials: true,
+//   allowedHeaders: ['Content-Type', 'Authorization'],
+//   methods: ['GET', 'POST', 'PUT', 'DELETE']
+// }));
+app.use(cors());
 
 // Connect to database
 connectDB();
